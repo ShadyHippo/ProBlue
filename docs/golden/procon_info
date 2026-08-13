@@ -1,0 +1,20 @@
+[General]
+Name=Pro Controller
+Class=0x002508
+SupportedTechnologies=BR/EDR;
+Trusted=true
+Blocked=false
+CablePairing=false
+WakeAllowed=true
+Services=00001000-0000-1000-8000-00805f9b34fb;00001124-0000-1000-8000-00805f9b34fb;00001200-0000-1000-8000-00805f9b34fb;
+
+[LinkKey]
+Key=REDACTED
+Type=4
+PINLength=0
+
+[DeviceID]
+Source=2
+Vendor=1406
+Product=8201
+Version=1

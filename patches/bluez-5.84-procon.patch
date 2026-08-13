@@ -1,0 +1,1069 @@
+--- a/Makefile.plugins
++++ b/Makefile.plugins
+@@ -107,7 +107,8 @@
+ 
+ if SIXAXIS
+ builtin_modules += sixaxis
+-builtin_sources += plugins/sixaxis.c
++builtin_sources += plugins/sixaxis.c profiles/input/procon.c \
++			profiles/input/procon.h
+ builtin_ldadd += $(UDEV_LIBS)
+ endif
+ 
+--- a/plugins/sixaxis.c
++++ b/plugins/sixaxis.c
+@@ -27,8 +27,10 @@
+ #include <libudev.h>
+ 
+ #include "bluetooth/bluetooth.h"
++#include "bluetooth/hci.h"
+ #include "bluetooth/sdp.h"
+ #include "bluetooth/uuid.h"
++#include "profiles/input/procon.h"
+ 
+ #include "src/adapter.h"
+ #include "src/device.h"
+@@ -137,6 +139,8 @@
+ 		return sixaxis_get_device_bdaddr(fd, bdaddr);
+ 	else if (type == CABLE_PAIRING_DS4)
+ 		return ds4_get_device_bdaddr(fd, bdaddr);
++	else if (type == CABLE_PAIRING_PROCON)
++		return procon_get_device_bdaddr(fd, bdaddr);
+ 	return -1;
+ }
+ 
+@@ -189,6 +193,9 @@
+ 		return sixaxis_get_central_bdaddr(fd, bdaddr);
+ 	else if (type == CABLE_PAIRING_DS4)
+ 		return ds4_get_central_bdaddr(fd, bdaddr);
++	/* CABLE_PAIRING_PROCON: there is no "stored central" read; the 3-step
++	 * (procon_pair) always (re)writes the host MAC + key, so the caller
++	 * never asks. Returning -1 keeps the dispatcher honest. */
+ 	return -1;
+ }
+ 
+@@ -237,6 +244,8 @@
+ 		return sixaxis_set_central_bdaddr(fd, bdaddr);
+ 	else if (type == CABLE_PAIRING_DS4)
+ 		return ds4_set_central_bdaddr(fd, bdaddr);
++	/* CABLE_PAIRING_PROCON: handled in agent_auth_cb via procon_pair()
++	 * (it returns the LTK, which this signature cannot). */
+ 	return -1;
+ }
+ 
+@@ -284,22 +293,53 @@
+ 		goto out;
+ 	}
+ 
+-	if (get_central_bdaddr(closure->fd, &central_bdaddr, closure->type) < 0)
+-		goto out;
+-
+ 	adapter_bdaddr = btd_adapter_get_address(closure->adapter);
+-	if (bacmp(adapter_bdaddr, &central_bdaddr)) {
+-		if (set_central_bdaddr(closure->fd, adapter_bdaddr,
++
++	if (closure->type == CABLE_PAIRING_PROCON) {
++		uint8_t ltk[16];
++
++		/* Wired 3-step: writes our MAC + a fresh key to the controller's
++		 * SPI flash and returns the LTK. Register it with bluetoothd +
++		 * the kernel BEFORE the controller connects — the Pro Controller
++		 * does not do over-the-air SSP, it only connects to the host
++		 * whose key it has stored (Bluez_switch_cable_plan.md §3). */
++		if (procon_pair(closure->fd, adapter_bdaddr, ltk) < 0)
++			goto out;
++
++		btd_adapter_store_link_key(closure->adapter, closure->device,
++					ltk, HCI_LK_UNAUTH_COMBINATION, 0);
++		info("procon: link key stored");
++
++		/* No stored-central concept; log the 3-step as a rewrite */
++		bacpy(&central_bdaddr, adapter_bdaddr);
++	} else {
++		if (get_central_bdaddr(closure->fd, &central_bdaddr,
+ 							closure->type) < 0)
+ 			goto out;
++
++		if (bacmp(adapter_bdaddr, &central_bdaddr)) {
++			if (set_central_bdaddr(closure->fd, adapter_bdaddr,
++								closure->type) < 0)
++				goto out;
++		}
+ 	}
+ 
+ 	remove_device = false;
+ 	btd_device_set_temporary(closure->device, false);
+ 
++	/* Cable pairing IS the authorization (the user physically plugged the
++	 * controller in), so mark it trusted — otherwise every connection
++	 * trips the agent authorization gate (adapter.c process_auth_queue:
++	 * untrusted devices need agent approval or die "without agent"). The
++	 * GUI pairing path sets Trusted too; cable pairing must match. */
++	btd_device_set_trusted(closure->device, true);
++
+ 	if (closure->type == CABLE_PAIRING_SIXAXIS) {
+ 		btd_device_set_record(closure->device, HID_UUID,
+ 						 SIXAXIS_HID_SDP_RECORD);
++	} else if (closure->type == CABLE_PAIRING_PROCON) {
++		btd_device_set_record(closure->device, HID_UUID,
++						 PROCON_HID_SDP_RECORD);
+ 	}
+ 
+ 	device_set_cable_pairing(closure->device, true);
+@@ -309,7 +349,7 @@
+ 	ba2str(&closure->bdaddr, device_addr);
+ 	ba2str(&central_bdaddr, central_addr);
+ 	ba2str(adapter_bdaddr, adapter_addr);
+-	DBG("remote %s old_central %s new_central %s",
++	info("sixaxis: cable pairing complete (remote %s old_central %s new_central %s)",
+ 				device_addr, central_addr, adapter_addr);
+ 
+ out:
+@@ -334,20 +374,62 @@
+ 	struct btd_device *device;
+ 	struct authentication_closure *closure;
+ 
++	/* Wake the BT chip's UART session before ANY subcommand — the passive
++	 * kernel fork sends nothing, so without this no subcmd gets a reply
++	 * (see procon_usb_session_init(), at session start). */
++	if (cp->type == CABLE_PAIRING_PROCON &&
++				procon_usb_session_init(fd) < 0)
++		return false;
++
++	/* Console order (c2j): subcmd 0x02 (device info / MAC probe) comes
++	 * FIRST, then 0x08 00 (arm). */
+ 	if (get_device_bdaddr(fd, &device_bdaddr, cp->type) < 0)
+ 		return false;
+ 
++	if (cp->type == CABLE_PAIRING_PROCON) {
++		/* Redock arm (0x08 00, clear shipment) on EVERY plug-in, including
++		 * already-paired controllers — the Switch re-arms after every
++		 * connection (RE doc "Switch always sends x08 00 after every
++		 * connection"); without it the controller stays in shipment mode
++		 * and never pages on a button press. A failed arm here must NOT
++		 * abort the plug-in flow — the device is already paired, and the
++		 * connectable keep below has to run regardless. */
++		if (procon_arm_wired(fd) < 0)
++			error("procon: wired arm failed (non-fatal)");
++		/* Actively keep the host page-scanning: the controller wakes by
++		 * paging the host, and the GUI only enables connectable while
++		 * discoverable. The Switch/phones stay connectable always —
++		 * plugging in a cable-paired controller must too, or the
++		 * wake-page is never heard (plan §3 reconnect-keeper). */
++		btd_adapter_set_connectable(adapter, true);
++	}
++
+ 	/* This can happen if controller was plugged while already setup and
+-	 * connected eg. to charge up battery. */
++	 * connected eg. to charge up battery.
++	 *
++	 * The Pro Controller is EXEMPT: the Switch re-pairs on EVERY dock
++	 * (c2j: 0x02 -> 0x08 00 -> x04 push -> 0x03 30 save), and there is no
++	 * "read stored central" subcommand to detect whether the controller
++	 * still holds our key (it can be lost e.g. by pairing to another host
++	 * since the last dock). So a trusted-but-disconnected PROCON must NOT
++	 * skip: the 3-step rewrites our MAC + a fresh LTK into the controller's
++	 * SPI flash and hands us the key. Only skip when actively connected
++	 * (charging while playing - don't yank the key out of a live session;
++	 * it re-pairs on the next dock). */
+ 	device = btd_adapter_find_device(adapter, &device_bdaddr,
+ 							BDADDR_BREDR);
+ 	if (device && btd_device_has_uuid(device, HID_UUID) &&
+ 			(btd_device_is_connected(device) ||
+ 			 btd_device_is_trusted(device))) {
+-		char device_addr[18];
+-		ba2str(&device_bdaddr, device_addr);
+-		DBG("device %s already known, skipping", device_addr);
+-		return false;
++		if (cp->type == CABLE_PAIRING_PROCON &&
++				!btd_device_is_connected(device))
++			DBG("procon: known device re-docked, re-pairing (Switch behavior)");
++		else {
++			char device_addr[18];
++			ba2str(&device_bdaddr, device_addr);
++			DBG("device %s already known, skipping", device_addr);
++			return false;
++		}
+ 	}
+ 
+ 	device = btd_adapter_get_device(adapter, &device_bdaddr, BDADDR_BREDR);
+@@ -363,6 +445,15 @@
+ 	btd_device_set_pnpid(device, cp->source, cp->vid, cp->pid, cp->version);
+ 	btd_device_set_temporary(device, true);
+ 
++	/* Cable pairing IS the authorization: the user physically plugged the
++	 * controller into USB (physical access required — spoofing needs the
++	 * same access a USB Rubber Ducky has). Trust it BEFORE requesting
++	 * cable authorization, so the gate in adapter.c process_auth_queue
++	 * short-circuits (btd_device_is_trusted -> auto-approve) and no agent
++	 * prompt is ever shown — the GUI pairing path trusts too; cable
++	 * pairing must match or every connection dies "without agent". */
++	btd_device_set_trusted(device, true);
++
+ 	closure = g_new0(struct authentication_closure, 1);
+ 	if (!closure) {
+ 		btd_adapter_remove_device(adapter, device);
+@@ -413,6 +504,8 @@
+ 	hid_name = udev_device_get_property_value(hid_parent, "HID_NAME");
+ 
+ 	cp = get_pairing(vid, pid, hid_name);
++	if (!cp)
++		cp = get_nintendo_pairing(vid, pid, hid_name);
+ 	*sysfs_path = g_strdup(udev_device_get_syspath(udevice));
+ 
+ 	return cp;
+@@ -432,7 +525,8 @@
+ 
+ 	cp = get_pairing_type_for_device(udevice, &bus, &sysfs_path);
+ 	if (!cp || (cp->type != CABLE_PAIRING_SIXAXIS &&
+-				cp->type != CABLE_PAIRING_DS4)) {
++			cp->type != CABLE_PAIRING_DS4 &&
++			cp->type != CABLE_PAIRING_PROCON)) {
+ 		g_free(sysfs_path);
+ 		return;
+ 	}
+--- a/profiles/input/device.c
++++ b/profiles/input/device.c
+@@ -48,6 +48,7 @@
+ #include "device.h"
+ #include "hidp_defs.h"
+ #include "server.h"
++#include "procon.h"
+ 
+ #define INPUT_INTERFACE "org.bluez.Input1"
+ 
+@@ -87,6 +88,7 @@
+ 	bool			virtual_cable_unplug;
+ 	uint8_t			type;
+ 	unsigned int		idle_timer;
++	uint8_t			procon_report_counter;
+ };
+ 
+ static int idle_timeout = 0;
+@@ -1230,20 +1232,39 @@
+ 		device_set_refresh_discovery(idev->device, false);
+ }
+ 
++static void procon_arm_if_pro_controller(struct input_device *idev);
++static void procon_set_player_led_if_pro_controller(struct input_device *idev);
++
+ static int input_device_connected(struct input_device *idev)
+ {
+ 	int err;
+ 
+ 	if (idev->intr_io == NULL || idev->ctrl_io == NULL)
+ 		return -ENOTCONN;
+-
+ 	/* Attempt to update SDP record if it had changed */
+ 	input_device_update_rec(idev);
+ 
++	/* Per-connection arm (the Switch's bt_pairer.cpp:1427 behavior, RE doc
++	 * "Switch always sends x08 00 after every connection"). Sent BEFORE
++	 * hidp_add_connection: the armed controller sticks on the FIRST
++	 * connection attempt, while an un-armed one does its
++	 * connect-and-self-terminate dance (btmon 2026-08-10: Remote User
++	 * Terminated 0x13 ~150 ms after PSM 19 when no arm arrived) and can
++	 * give up entirely. Every connect path funnels through here — inbound
++	 * (input_device_connadd) and outbound/auto-reconnect
++	 * (interrupt_connect_cb) — so the reconnect-keeper goes out on EVERY
++	 * connection, not just the first. */
++	info("procon: connection established, arming");
++	procon_arm_if_pro_controller(idev);
++
+ 	err = hidp_add_connection(idev);
+ 	if (err < 0)
+ 		return err;
+ 
++	/* Channel fully negotiated now — the player LED must go out after the
++	 * HIDP handshake or the controller drops it (see procon_arm). */
++	procon_set_player_led_if_pro_controller(idev);
++
+ 	btd_service_connecting_complete(idev->service, 0);
+ 
+ 	return 0;
+@@ -1595,6 +1616,95 @@
+ 	input_device_free(idev);
+ }
+ 
++/* The Switch's post-connection arm for the Pro Controller
++ * (bt_pairer.cpp:1427; see procon.h PROCON_ARM_*). Sent over the interrupt
++ * channel after EVERY connection: 0x08 00 (clear shipment mode — without it
++ * the controller "cannot wake up from button presses" after sleeping: the
++ * long-idle reconnect-keeper) and 0x30 01 (player-1 LED). Nothing in the
++ * stock stack sends these (evidence 21). Report framing over BT is the same
++ * output report 0x01 as USB: [0]=0x01, [1]=counter, [2..9]=rumble(0),
++ * [10]=subcmd, [11]=data.
++ *
++ * The two halves MUST go out on opposite sides of hidp_add_connection():
++ * 0x08 00 pre-connect (the armed controller sticks on the FIRST connection
++ * attempt, see input_device_connected) and 0x30 01 post-connect — sent
++ * before the HIDP handshake completes it is dropped by the controller
++ * (observed live: LEDs kept the search chase pattern). So procon_arm() is
++ * the pre-connect half only; input_device_connected() sends the player LED
++ * after the channel is fully negotiated. */
++static void procon_arm(struct input_device *idev)
++{
++	uint8_t buf[12];
++	uint8_t hdr = HIDP_TRANS_DATA | HIDP_DATA_RTYPE_OUTPUT;
++	uint8_t counter = idev->procon_report_counter++ & 0x0f;
++	bool ok;
++
++	if (!idev->intr_io) {
++		info("procon: arm SKIPPED (no intr channel)");
++		return;
++	}
++
++	memset(buf, 0, sizeof(buf));
++	buf[0] = PROCON_REPORT_SUBCMD;
++	buf[1] = counter;
++	buf[10] = PROCON_ARM_CLEAR_SHIPMENT;
++	buf[11] = PROCON_ARM_CLEAR_SHIPMENT_DATA;
++	ok = hidp_send_intr_message(idev, hdr, buf, sizeof(buf));
++	if (!ok)
++		info("procon: arm 0x08 00 SEND FAILED (intr channel down?)");
++	else
++		info("procon: arm 0x08 00 sent over BT");
++}
++
++/* Post-connect half: the player-1 LED (subcmd 0x30). Unlike the 0x08 00
++ * arm this is sent only after hidp_add_connection() has completed, so the
++ * result is meaningful — and it is checked and logged here so a dropped
++ * LED can no longer fail silently. */
++static void procon_set_player_led(struct input_device *idev)
++{
++	uint8_t buf[12];
++	uint8_t hdr = HIDP_TRANS_DATA | HIDP_DATA_RTYPE_OUTPUT;
++	bool ok;
++
++	if (!idev->intr_io) {
++		info("procon: player LED SKIPPED (no intr channel)");
++		return;
++	}
++
++	memset(buf, 0, sizeof(buf));
++	buf[0] = PROCON_REPORT_SUBCMD;
++	buf[1] = idev->procon_report_counter++ & 0x0f;
++	buf[10] = PROCON_ARM_PLAYER1_LED;
++	buf[11] = PROCON_ARM_PLAYER1_LED_DATA;
++	ok = hidp_send_intr_message(idev, hdr, buf, sizeof(buf));
++	if (!ok)
++		info("procon: player LED 0x30 01 SEND FAILED (intr channel down?)");
++	else
++		info("procon: player LED 0x30 01 sent over BT");
++}
++
++static void procon_set_player_led_if_pro_controller(struct input_device *idev)
++{
++	uint16_t vid, pid;
++
++	vid = btd_device_get_vendor(idev->device);
++	pid = btd_device_get_product(idev->device);
++
++	if (vid == PROCON_VID && pid == PROCON_PID)
++		procon_set_player_led(idev);
++}
++
++static void procon_arm_if_pro_controller(struct input_device *idev)
++{
++	uint16_t vid, pid;
++
++	vid = btd_device_get_vendor(idev->device);
++	pid = btd_device_get_product(idev->device);
++
++	if (vid == PROCON_VID && pid == PROCON_PID)
++		procon_arm(idev);
++}
++
+ static int input_device_connadd(struct input_device *idev)
+ {
+ 	int err;
+--- a/profiles/input/server.c
++++ b/profiles/input/server.c
+@@ -31,6 +31,7 @@
+ #include "src/profile.h"
+ 
+ #include "sixaxis.h"
++#include "procon.h"
+ #include "device.h"
+ #include "server.h"
+ 
+@@ -107,7 +108,11 @@
+ 	device_wait_for_svc_complete(device, sixaxis_sdp_cb, data);
+ }
+ 
+-static bool dev_is_sixaxis(const bdaddr_t *src, const bdaddr_t *dst)
++/* A cable-paired device (legacy name "sixaxis" — the PS3/PS4 controllers
++ * and the Nintendo Pro Controller all use BlueZ's cable-pairing mechanism).
++ * These skip the bonded/encryption checks and get the -ENOENT SDP-browse
++ * deferral for inbound connects. */
++static bool dev_is_cable_pairing(const bdaddr_t *src, const bdaddr_t *dst)
+ {
+ 	struct btd_device *device;
+ 	uint16_t vid, pid;
+@@ -125,6 +130,10 @@
+ 					cp->type == CABLE_PAIRING_DS4))
+ 		return true;
+ 
++	cp = get_nintendo_pairing(vid, pid, NULL);
++	if (cp && cp->type == CABLE_PAIRING_PROCON)
++		return true;
++
+ 	return false;
+ }
+ 
+@@ -160,7 +169,7 @@
+ 	if (ret == 0)
+ 		return;
+ 
+-	if (ret == -ENOENT && dev_is_sixaxis(&src, &dst)) {
++	if (ret == -ENOENT && dev_is_cable_pairing(&src, &dst)) {
+ 		sixaxis_browse_sdp(&src, &dst, chan, psm);
+ 		return;
+ 	}
+@@ -190,7 +199,7 @@
+ 	}
+ 
+ 	if (!input_device_exists(&server->src, &confirm->dst) &&
+-				!dev_is_sixaxis(&server->src, &confirm->dst))
++				!dev_is_cable_pairing(&server->src, &confirm->dst))
+ 		return;
+ 
+ 	if (!bt_io_accept(confirm->io, connect_event_cb, server, NULL, &err)) {
+@@ -241,7 +250,7 @@
+ 		goto drop;
+ 	}
+ 
+-	if (!input_device_exists(&src, &dst) && !dev_is_sixaxis(&src, &dst)) {
++	if (!input_device_exists(&src, &dst) && !dev_is_cable_pairing(&src, &dst)) {
+ 		error("Refusing connection from %s: unknown device", addr);
+ 		goto drop;
+ 	}
+--- a/profiles/input/sixaxis.h
++++ b/profiles/input/sixaxis.h
+@@ -13,10 +13,18 @@
+ #ifndef _SIXAXIS_H_
+ #define _SIXAXIS_H_
+ 
++/*
++ * NOTE: this header is the SHARED cable-pairing mechanism (legacy name —
++ * it is not PS3-specific). struct cable_pairing, the CablePairingType enum
++ * and get_pairing() are used by the generic input profile (server.c/device.c)
++ * AND the sixaxis udev plugin. The PS device table lives here; the Nintendo
++ * Pro Controller table + protocol live in procon.h.
++ */
+ typedef enum {
+ 	CABLE_PAIRING_UNSUPPORTED = 0,
+ 	CABLE_PAIRING_SIXAXIS,
+ 	CABLE_PAIRING_DS4,
++	CABLE_PAIRING_PROCON,
+ } CablePairingType;
+ 
+ struct cable_pairing {
+--- a/src/adapter.c
++++ b/src/adapter.c
+@@ -3178,18 +3178,23 @@
+ 
+ 		break;
+ 	case MGMT_SETTING_DISCOVERABLE:
+-		if (btd_has_kernel_features(KERNEL_CONN_CONTROL)) {
+-			if (mode) {
+-				set_mode(adapter, MGMT_OP_SET_CONNECTABLE,
+-									mode);
+-			} else {
+-				opcode = MGMT_OP_SET_CONNECTABLE;
+-				param = &mode;
+-				len = sizeof(mode);
+-				break;
+-			}
++		/* With kernel conn control, turning discoverable off normally
++		 * also clears connectable (page scan). Skip that swap when
++		 * cable-paired BR/EDR devices exist — the Pro Controller wakes
++		 * by paging the host, so the host must keep page-scanning even
++		 * with the GUI's discoverable off (the Switch and phones stay
++		 * connectable always; plan §3 reconnect-keeper). */
++		if (btd_has_kernel_features(KERNEL_CONN_CONTROL) && !mode &&
++		    !btd_adapter_has_cable_pairing_devices(adapter)) {
++			opcode = MGMT_OP_SET_CONNECTABLE;
++			param = &mode;
++			len = sizeof(mode);
++			break;
+ 		}
+ 
++		if (btd_has_kernel_features(KERNEL_CONN_CONTROL) && mode)
++			set_mode(adapter, MGMT_OP_SET_CONNECTABLE, mode);
++
+ 		memset(&cp, 0, sizeof(cp));
+ 		cp.val = mode;
+ 		if (cp.val)
+@@ -5864,6 +5869,26 @@
+ 
+ 	DBG("adapter %s has been enabled", adapter->path);
+ 
++	/* The kernel clears the accept list on power-off, and nothing
++	 * re-populates it for devices that were already non-temporary
++	 * (the accept-list add only fires at the temporary→non-temporary
++	 * pairing transition). Re-add cable-paired BR/EDR devices on every
++	 * power-on so the controller's wake-page is heard — page → kernel
++	 * accepts (accept list) → link key → connect — with no GUI open.
++	 * Harmless if the entry is already present (the kernel rejects the
++	 * duplicate; the error log is cosmetic). */
++	if (btd_has_kernel_features(KERNEL_CONN_CONTROL)) {
++		GSList *l;
++
++		for (l = adapter->devices; l; l = l->next) {
++			struct btd_device *device = l->data;
++
++			if (!device_is_temporary(device) &&
++					device_is_cable_pairing(device))
++				adapter_accept_list_add(adapter, device);
++		}
++	}
++
+ 	trigger_passive_scanning(adapter);
+ }
+ 
+@@ -8010,6 +8035,21 @@
+ 	return 0;
+ }
+ 
++/* Actively keep the host page-scanning (Connectable) for cable-paired
++ * devices. The Switch and phones stay connectable always; the GUI only
++ * enables it while discoverable, so a cable-paired controller waking by
++ * paging the host would otherwise be unheard. Called from the sixaxis
++ * plugin when a cable-paired device is set up. */
++int btd_adapter_set_connectable(struct btd_adapter *adapter, gboolean enable)
++{
++	if (!btd_adapter_get_powered(adapter))
++		return -EINVAL;
++
++	set_mode(adapter, MGMT_OP_SET_CONNECTABLE, enable ? 0x01 : 0x00);
++
++	return 0;
++}
++
+ int btd_adapter_read_clock(struct btd_adapter *adapter, const bdaddr_t *bdaddr,
+ 				int which, int timeout, uint32_t *clock,
+ 				uint16_t *accuracy)
+@@ -8722,6 +8762,83 @@
+ 	g_key_file_free(key_file);
+ }
+ 
++/* Re-read every BR/EDR link key from storage and reload the kernel list via
++ * MGMT_OP_LOAD_LINK_KEYS (full-list replacement — the only runtime key-add
++ * path in BlueZ 5.84; there is no MGMT_OP_ADD_LINK_KEY). Mirrors the
++ * key-collection portion of load_devices() so runtime registrations (cable
++ * pairing) coexist with everything bluetoothd already knows. */
++static void reload_link_keys(struct btd_adapter *adapter)
++{
++	char dirname[PATH_MAX];
++	GSList *keys = NULL;
++	GError *gerr = NULL;
++	DIR *dir;
++	struct dirent *entry;
++
++	create_filename(dirname, PATH_MAX, "/%s",
++				btd_adapter_get_storage_dir(adapter));
++
++	dir = opendir(dirname);
++	if (!dir) {
++		btd_error(adapter->dev_id,
++				"Unable to open adapter storage directory: %s",
++								dirname);
++		return;
++	}
++
++	while ((entry = readdir(dir)) != NULL) {
++		struct link_key_info *key_info;
++		char filename[PATH_MAX];
++		GKeyFile *key_file;
++		uint8_t bdaddr_type;
++
++		if (entry->d_type == DT_UNKNOWN)
++			entry->d_type = util_get_dt(dirname, entry->d_name);
++
++		if (entry->d_type != DT_DIR || bachk(entry->d_name) < 0)
++			continue;
++
++		create_filename(filename, PATH_MAX, "/%s/%s/info",
++					btd_adapter_get_storage_dir(adapter),
++					entry->d_name);
++
++		key_file = g_key_file_new();
++		if (!g_key_file_load_from_file(key_file, filename, 0, &gerr)) {
++			g_clear_error(&gerr);
++			g_key_file_free(key_file);
++			continue;
++		}
++
++		bdaddr_type = get_addr_type(key_file);
++		key_info = get_key_info(key_file, entry->d_name, bdaddr_type);
++		g_key_file_free(key_file);
++
++		if (!key_info)
++			continue;
++
++		keys = g_slist_append(keys, key_info);
++	}
++
++	closedir(dir);
++
++	load_link_keys(adapter, keys, btd_opts.debug_keys);
++	g_slist_free_full(keys, g_free);
++}
++
++/* Runtime BR/EDR link-key registration for cable-paired devices: persist the
++ * key bluetoothd-style (info file [LinkKey] section) and load it into the
++ * kernel. Called by plugins/sixaxis.c for the Pro Controller — the 3-step
++ * returns the LTK over USB, and the controller connects with that key only
++ * (no over-the-air SSP), so it must be registered before the first connect. */
++void btd_adapter_store_link_key(struct btd_adapter *adapter,
++				struct btd_device *device, const uint8_t *key,
++				uint8_t type, uint8_t pin_length)
++{
++	store_link_key(adapter, device, key, type, pin_length);
++
++	reload_link_keys(adapter);
++}
++
+ static void new_link_key_callback(uint16_t index, uint16_t length,
+ 					const void *param, void *user_data)
+ {
+--- a/src/adapter.h
++++ b/src/adapter.h
+@@ -77,6 +77,9 @@
+ const char *btd_adapter_get_name(struct btd_adapter *adapter);
+ void btd_adapter_remove_device(struct btd_adapter *adapter,
+ 				struct btd_device *dev);
++void btd_adapter_store_link_key(struct btd_adapter *adapter,
++				struct btd_device *device, const uint8_t *key,
++				uint8_t type, uint8_t pin_length);
+ struct btd_device *btd_adapter_get_device(struct btd_adapter *adapter,
+ 					const bdaddr_t *addr,
+ 					uint8_t addr_type);
+@@ -179,6 +182,9 @@
+ int btd_adapter_set_fast_connectable(struct btd_adapter *adapter,
+ 							gboolean enable);
+ 
++int btd_adapter_set_connectable(struct btd_adapter *adapter,
++							gboolean enable);
++
+ int btd_adapter_read_clock(struct btd_adapter *adapter, const bdaddr_t *bdaddr,
+ 				int which, int timeout, uint32_t *clock,
+ 				uint16_t *accuracy);
+--- a/profiles/input/procon.c
++++ b/profiles/input/procon.c
+@@ -0,0 +1,282 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++/*
++ *
++ *  BlueZ - Bluetooth protocol stack for Linux
++ *
++ *  Copyright (C) 2026  Tim Van Dyke <tim.vandyke123@gmail.com>
++ *
++ *  Nintendo Switch Pro Controller wired cable-pairing protocol (see the
++ *  RE sources in README §11).
++ *
++ *  All subcmds run over the hidraw fd of the USB-connected controller. The
++ *  kernel fork's hid-nintendo driver keeps the controller's BT radio up while
++ *  USB is connected (joycon_is_passive), which is what makes this possible.
++ */
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif
++
++#define _GNU_SOURCE
++#include <errno.h>
++#include <fcntl.h>
++#include <stddef.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/select.h>
++#include <unistd.h>
++#include <glib.h>
++
++#include "bluetooth/bluetooth.h"
++#include "src/log.h"
++
++#include "profiles/input/procon.h"
++
++/* Send one subcommand over the hidraw fd and wait for the 0x21 reply.
++ * Send: write 64-byte output report 0x01, then poll for the matching
++ * subcmd reply. Returns 0 on ACK (>= 0x80), negative errno
++ * otherwise. On success, reply_out points into `buf` (full 64-byte report;
++ * caller indexes [15..] for payload). */
++static int procon_send_subcmd(int fd, uint8_t *counter, uint8_t subcmd,
++				const uint8_t *data, size_t len,
++				uint8_t buf[64])
++{
++	uint8_t pkt[64];
++	fd_set rfds;
++	struct timeval tv;
++	int ret;
++
++	memset(pkt, 0, sizeof(pkt));
++	pkt[0] = PROCON_REPORT_SUBCMD;
++	pkt[1] = (*counter) & 0x0f;
++	pkt[10] = subcmd;
++	if (data && len)
++		memcpy(pkt + 11, data, len);
++
++	(*counter)++;
++
++	ret = write(fd, pkt, sizeof(pkt));
++	if (ret < 0)
++		return -errno;
++
++	for (;;) {
++		FD_ZERO(&rfds);
++		FD_SET(fd, &rfds);
++		tv.tv_sec = 2;
++		tv.tv_usec = 0;
++
++		ret = select(fd + 1, &rfds, NULL, NULL, &tv);
++		if (ret < 0) {
++			if (errno == EINTR)
++				continue;
++			return -errno;
++		}
++		if (ret == 0) {
++			error("procon: subcmd 0x%02x: no reply", subcmd);
++			return -ETIMEDOUT;
++		}
++
++		ret = read(fd, buf, 64);
++		if (ret < 0) {
++			if (errno == EINTR)
++				continue;
++			return -errno;
++		}
++
++		/* Input report 0x21 = subcmd reply:
++		 * [13] = ACK (0x80+ = ok, 0x00 = NACK), [14] = subcmd id */
++		if (buf[0] == PROCON_REPORT_ACK && buf[14] == subcmd) {
++			if (buf[13] < 0x80) {
++				error("procon: subcmd 0x%02x NACK (ack=0x%02x)",
++					subcmd, buf[13]);
++				return -EIO;
++			}
++			return 0;
++		}
++	}
++}
++
++/* Send a 2-byte USB-mode command [0x80][cmd] and wait for the [0x81][cmd]
++ * reply. These are raw 2-byte writes on the same hidraw fd as the
++ * subcommands; they start the wired UART session with the BT chip. */
++static int procon_usb_cmd(int fd, uint8_t cmd)
++{
++	uint8_t pkt[2] = { 0x80, cmd };
++	uint8_t buf[64];
++	fd_set rfds;
++	struct timeval tv;
++	int ret;
++
++	ret = write(fd, pkt, sizeof(pkt));
++	if (ret < 0)
++		return -errno;
++
++	for (;;) {
++		FD_ZERO(&rfds);
++		FD_SET(fd, &rfds);
++		tv.tv_sec = 2;
++		tv.tv_usec = 0;
++
++		ret = select(fd + 1, &rfds, NULL, NULL, &tv);
++		if (ret < 0) {
++			if (errno == EINTR)
++				continue;
++			return -errno;
++		}
++		if (ret == 0) {
++			error("procon: usb 0x80 0x%02x: no reply", cmd);
++			return -ETIMEDOUT;
++		}
++
++		ret = read(fd, buf, sizeof(buf));
++		if (ret < 0) {
++			if (errno == EINTR)
++				continue;
++			return -errno;
++		}
++		if (ret >= 2 && buf[0] == 0x81 && buf[1] == cmd) {
++			info("procon: usb 0x80 0x%02x ack", cmd);
++			return 0;
++		}
++	}
++}
++
++/* Start the wired UART session with the controller's BT chip.
++ * 80 02, 80 03 (3 Mbit), 80 02 — the second 0x02 is required for the baud
++ * switch to take effect. Must run BEFORE any
++ * subcommand, or the chip never answers (hid-nintendo's fork probe is
++ * passive and sends nothing). Called once at session start (setup_device). */
++int procon_usb_session_init(int fd)
++{
++	int ret;
++
++	ret = procon_usb_cmd(fd, PROCON_USB_CMD_HANDSHAKE);
++	if (ret < 0)
++		return ret;
++	ret = procon_usb_cmd(fd, PROCON_USB_CMD_BAUDRATE_3M);
++	if (ret < 0)
++		return ret;
++	return procon_usb_cmd(fd, PROCON_USB_CMD_HANDSHAKE);
++}
++
++/* subcmd 0x02 (REQ_DEV_INFO): reply data[4..9] = controller BT address.
++ * Kernel hid-nintendo.c joycon_read_info(): ctlr->mac_addr[j] =
++ * subcmd_reply.data[4 + j]. The raw 0x21 report's payload starts at byte 15,
++ * so data[0] == buf[15] and the MAC lives at buf[19..25]. The MAC comes back
++ * in display (big-endian) order; bdaddr_t wants wire order, so baswap. */
++int procon_get_device_bdaddr(int fd, bdaddr_t *bdaddr)
++{
++	uint8_t buf[64];
++	uint8_t counter = 0;
++	int ret;
++
++	ret = procon_send_subcmd(fd, &counter, PROCON_SUBCMD_REQ_DEV_INFO,
++					NULL, 0, buf);
++	if (ret < 0)
++		return ret;
++
++	baswap(bdaddr, (bdaddr_t *)(buf + 19));
++
++	return 0;
++}
++
++/* The wired reconnect-keeper arm: subcmd 0x08 00 (clear shipment mode, SPI
++ * x5000) — the console's USB command #2 (c2j redock: 0x02 → 0x08 00 → x04 →
++ * 0x03 30, plan §3). Without it the controller stays in shipment mode and
++ * NEVER pages the host on a button press. The Switch sends it after EVERY
++ * connection (RE doc "Switch always sends x08 00 after every connection"),
++ * including re-docking an already-paired controller — so setup_device arms
++ * on every plug-in, and procon_pair re-arms before the 3-step. */
++int procon_arm_wired(int fd)
++{
++	uint8_t buf[64];
++	uint8_t data[1] = { PROCON_ARM_CLEAR_SHIPMENT_DATA };
++	uint8_t counter = 0;
++	int ret;
++
++	ret = procon_send_subcmd(fd, &counter, PROCON_ARM_CLEAR_SHIPMENT,
++					data, 1, buf);
++	if (ret < 0)
++		return ret;
++	info("procon: armed (0x08 00 shipment cleared)");
++
++	return 0;
++}
++
++/* The wired 3-step pairing:
++ *
++ *   step 1: subcmd 0x01, data[0]=0x01 (PAIR_STEP_HOST_MAC) + host MAC
++ *           (HCI wire order — bdaddr_t is already wire order). Reply data[0]
++ *           echoes 0x01, data[1..7] = controller MAC (LE; ignored here).
++ *   step 2: subcmd 0x01, data[0]=0x02 (PAIR_STEP_GET_LTK). The controller
++ *           returns the key in its flash order (Little-Endian), each byte
++ *           XORed with 0xAA; the host uses it BYTE-REVERSED (verified against
++ *           a genuine SSP pairing — controller flash bdfdff7b... == bluetoothd
++ *           key f00a4af6...). Loading the un-reversed key fails auth 0x05.
++ *   step 3: subcmd 0x01, data[0]=0x03 (PAIR_STEP_SAVE) — commit to flash.
++ *
++ * The controller GENERATES a fresh LTK, saves it + our MAC to its own SPI
++ * flash, and hands the LTK to us over the wire. The plugin must then register
++ * that LTK in bluetoothd storage + the kernel before the controller connects.
++ */
++int procon_pair(int fd, const bdaddr_t *host, uint8_t ltk[16])
++{
++	uint8_t buf[64];
++	uint8_t data[8];
++	uint8_t counter = 0;
++	int ret, i;
++
++	/* Re-establish the UART session before the 3-step. The session was
++	 * initialized at setup_device (for the BDADDR probe), but the cable
++	 * authorization gap (agent prompt) lets the controller's BT chip go
++	 * idle and drop it — subcmds then get no reply. Re-initialize just
++	 * before the 3-step so the chip is guaranteed awake. */
++	ret = procon_usb_session_init(fd);
++	if (ret < 0)
++		return ret;
++
++	/* Console order (c2j): ... 0x08 00 (arm) right before the pairing
++	 * write. The Switch re-arms after every connection (bt_pairer.cpp:1427;
++	 * RE doc "Switch always sends x08 00 after every connection") — a
++	 * first-ever pairing must arm too, or the freshly-paired controller
++	 * stays in shipment mode and never pages the host on a button press. */
++	data[0] = PROCON_ARM_CLEAR_SHIPMENT_DATA;
++	ret = procon_send_subcmd(fd, &counter, PROCON_ARM_CLEAR_SHIPMENT,
++					data, 1, buf);
++	if (ret < 0)
++		return ret;
++	info("procon: armed (0x08 00 shipment cleared)");
++
++	/* Step 1: present our BT MAC, get the controller's MAC */
++	data[0] = PROCON_PAIR_HOST_MAC;
++	memcpy(data + 1, host, 6);
++	ret = procon_send_subcmd(fd, &counter, PROCON_SUBCMD_BT_MANUAL_PAIR,
++					data, 7, buf);
++	if (ret < 0)
++		return ret;
++	if (buf[15] != PROCON_PAIR_HOST_MAC)
++		return -EIO;
++	info("procon: 3-step step 1 done (host MAC sent)");
++
++	/* Step 2: get the LTK (each byte XORed with 0xAA), then byte-reverse */
++	data[0] = PROCON_PAIR_GET_LTK;
++	ret = procon_send_subcmd(fd, &counter, PROCON_SUBCMD_BT_MANUAL_PAIR,
++					data, 1, buf);
++	if (ret < 0)
++		return ret;
++	if (buf[15] != PROCON_PAIR_GET_LTK)
++		return -EIO;
++	for (i = 0; i < 16; i++)
++		ltk[i] = buf[31 - i] ^ 0xAA;
++	info("procon: 3-step step 2 done (LTK acquired)");
++
++	/* Step 3: commit pairing info to controller flash */
++	data[0] = PROCON_PAIR_SAVE;
++	ret = procon_send_subcmd(fd, &counter, PROCON_SUBCMD_BT_MANUAL_PAIR,
++					data, 1, buf);
++	if (ret < 0)
++		return ret;
++	info("procon: 3-step step 3 done (saved on controller)");
++
++	return 0;
++}
+--- a/profiles/input/procon.h
++++ b/profiles/input/procon.h
+@@ -0,0 +1,129 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++/*
++ *
++ *  BlueZ - Bluetooth protocol stack for Linux
++ *
++ *  Copyright (C) 2026  Tim Van Dyke <tim.vandyke123@gmail.com>
++ *
++ *  Nintendo Switch Pro Controller cable pairing (over-cable).
++ *
++ *  The Pro Controller is NOT a PlayStation-style cable-paired device: it does
++ *  not do over-the-air SSP when connecting. It arrives carrying a link key in
++ *  its SPI flash (written by the Switch's 3-step protocol) and connects only
++ *  to the host whose MAC + key it has stored. The wired flow therefore must:
++ *
++ *    1. read the controller's BT address (subcmd 0x02, device info),
++ *    2. run the wired 3-step (subcmd 0x01: x01 host-MAC -> x02 GET_LTK ->
++ *       x03 save) so the controller's flash agrees with our host,
++ *    3. register the acquired LTK in bluetoothd storage AND load it into the
++ *       kernel (MGMT_OP_LOAD_LINK_KEYS) BEFORE the controller connects —
++ *       there is no runtime add-key path in BlueZ 5.84.
++ *
++ *  This is the vendor-specific half of the cable-pairing mechanism. The
++ *  shared mechanism (CablePairingType enum, struct cable_pairing) lives in
++ *  profiles/input/sixaxis.h — legacy name, shared infrastructure; the PS
++ *  device table stays there, this file owns everything Nintendo.
++ */
++
++#ifndef _PROCON_H_
++#define _PROCON_H_
++
++#include "profiles/input/sixaxis.h"
++
++#define PROCON_VID			0x057e
++#define PROCON_PID			0x2009
++#define PROCON_NAME			"Pro Controller"
++
++/* Output report 0x01 (subcmd) layout, same over USB and BT intr channel:
++ *   [0] = report id 0x01, [1] = packet counter (low nibble),
++ *   [2..9] = rumble (8 zero bytes), [10] = subcmd id, [11+] = data.
++ * Reply report 0x21: [13] = ACK (0x80+ = ok), [14] = subcmd id, [15+] = data.
++ */
++#define PROCON_REPORT_SUBCMD		0x01
++#define PROCON_REPORT_ACK		0x21
++
++/* USB-mode commands (raw 2-byte writes) */
++#define PROCON_USB_CMD_HANDSHAKE	0x02	/* start UART session */
++#define PROCON_USB_CMD_BAUDRATE_3M	0x03	/* switch to 3 Mbit */
++
++#define PROCON_SUBCMD_BT_MANUAL_PAIR	0x01	/* the wired 3-step pairing */
++#define PROCON_SUBCMD_REQ_DEV_INFO	0x02	/* controller MAC + type */
++#define PROCON_SUBCMD_SET_REPORT_MODE	0x03	/* 0x30 = standard full report */
++#define PROCON_SUBCMD_SET_SHIPMENT_STATE 0x08	/* 0x00 = clear (reconnect-keeper) */
++#define PROCON_SUBCMD_SET_PLAYER_LIGHTS	0x30	/* 0x01..0x08 = player LEDs */
++
++#define PROCON_PAIR_HOST_MAC		0x01
++#define PROCON_PAIR_GET_LTK		0x02
++#define PROCON_PAIR_SAVE		0x03
++
++/* The Switch's post-connection arm (bt_pairer.cpp:1427) — sent over a BT
++ * interrupt channel after EVERY connection:
++ *   0x08 00 : clear shipment mode (SPI x5000) + enable LPM-to-sleep, so a
++ *             button press wakes the controller later (the reconnect-keeper);
++ *   0x30 01 : player-1 LED.
++ * Nothing in the current stack sends these (evidence 21).
++ */
++#define PROCON_ARM_CLEAR_SHIPMENT	0x08
++#define PROCON_ARM_CLEAR_SHIPMENT_DATA	0x00
++#define PROCON_ARM_PLAYER1_LED		0x30
++#define PROCON_ARM_PLAYER1_LED_DATA	0x01
++
++int procon_usb_session_init(int fd);
++int procon_arm_wired(int fd);
++int procon_get_device_bdaddr(int fd, bdaddr_t *bdaddr);
++int procon_pair(int fd, const bdaddr_t *host, uint8_t ltk[16]);
++
++/* The Nintendo over-cable device table (the Nintendo counterpart of
++ * sixaxis.h get_pairing()). Only the Pro Controller for now; the table
++ * exists so the shared input-profile gate (server.c) can recognize
++ * Nintendo cable-paired devices the same way it recognizes PS ones. */
++static inline const struct cable_pairing *
++get_nintendo_pairing(uint16_t vid, uint16_t pid, const char *name)
++{
++	static const struct cable_pairing devices[] = {
++		{
++			.name = PROCON_NAME,
++			.source = 0x0002, /* USB */
++			.vid = PROCON_VID,
++			.pid = PROCON_PID,
++			.version = 0x0000,
++			.type = CABLE_PAIRING_PROCON,
++		},
++	};
++	guint i;
++
++	for (i = 0; i < G_N_ELEMENTS(devices); i++) {
++		if (devices[i].vid != vid)
++			continue;
++		if (devices[i].pid != pid)
++			continue;
++
++		if (name && !g_str_has_suffix(name, devices[i].name))
++			continue;
++
++		return &devices[i];
++	}
++
++	return NULL;
++}
++
++/* PROCON_HID_SDP_RECORD — the HID service record for the Pro Controller,
++ * captured verbatim from bluetoothd's SDP cache on a genuine GUI pairing
++ * (docs/golden/procon_sdp_cache, ServiceRecords 0x00010000, captured
++ * 2026-08-10). Bare hex string like SIXAXIS_HID_SDP_RECORD.
++ * Setting this kills the malformed-seed problem: services resolve from the
++ * hardcoded record, no SDP seed/cache needed. */
++#define PROCON_HID_SDP_RECORD "36017D0900000A000100000900013503191124090004"\
++	"350D350619010009001135031900110900053503191002090006350909656E09006A09"\
++	"01000900093508350619112409010109000D350F350D35061901000900133503190011"\
++	"0901002510576972656C6573732047616D65706164090101250747616D657061640901"\
++	"0225084E696E74656E646F090201090111090202080809020308210902042801090205"\
++	"280109020635B035AE082225AA05010905A1010601FF85210921750895308102853009"\
++	"3075089530810285310931750896690181028532093275089669018102853309337508"\
++	"9669018102853F05091901291015002501750195108102050109391500250775049501"\
++	"814205097504950181010501093009310933093416000027FFFF000075109504810206"\
++	"01FF850109017508953091028510091075089530910285110911750895309102851209"\
++	"12750895309102C009020735083506090409090100090209280109020A280109020C09"\
++	"0C8009020D280009020E2800"
++
++#endif /* _PROCON_H_ */
