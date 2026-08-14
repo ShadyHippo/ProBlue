@@ -27,10 +27,11 @@ Bluetooth UI open.
    - [7.4 Troubleshooting](#74-troubleshooting)
    - [7.5 Reproducing the patch](#75-reproducing-the-patch-from-pristine)
 8. [Configuration notes](#8-configuration-notes)
-9. [Known limitations & open items](#9-known-limitations--open-items)
-10. [Upstreaming notes](#10-upstreaming-notes)
-11. [Reverse-engineering sources](#11-reverse-engineering-sources)
-12. [License](#12-license)
+9. [The firmware's hostname quirk (Bluetooth power profile)](#9-the-firmwares-hostname-quirk-bluetooth-power-profile)
+10. [Known limitations & open items](#10-known-limitations--open-items)
+11. [Upstreaming notes](#11-upstreaming-notes)
+12. [Reverse-engineering sources](#12-reverse-engineering-sources)
+13. [License](#13-license)
 
 ---
 
@@ -56,7 +57,7 @@ everything else just works — the way Nintendo designed it.
 ## 2. What the Switch actually does
 
 All of this comes from public RE work (see
-[§11 Reverse-engineering sources](#11-reverse-engineering-sources)),
+[§12 Reverse-engineering sources](#12-reverse-engineering-sources)),
 cross-checked against real captures of a genuine Switch and against the
 controller's own SPI flash.
 
@@ -263,7 +264,7 @@ not PS3-specific).
 
 | Change | Why |
 |---|---|
-| `btd_adapter_store_link_key()` + `reload_link_keys()` | Runtime BR/EDR link-key registration: persist the LTK bluetoothd-style (info file `[LinkKey]` section) and reload the whole kernel key list via `MGMT_OP_LOAD_LINK_KEYS` (the *only* runtime key-add path in 5.84 — there is no `MGMT_OP_ADD_LINK_KEY`). Required because the controller connects with the key we just wrote, before any over-the-air key exchange could happen. Also resolves the stock TODO in `sixaxis_set_central_bdaddr()` ("there ...
+| `btd_adapter_store_link_key()` + `reload_link_keys()` | Runtime BR/EDR link-key registration: persist the LTK bluetoothd-style (info file `[LinkKey]` section) and reload the whole kernel key list via `MGMT_OP_LOAD_LINK_KEYS` (the *only* runtime key-add path in 5.84 — there is no `MGMT_OP_ADD_LINK_KEY`). Required because the controller connects with the key we just wrote, before any over-the-air key exchange could happen. Also resolves the stock TODO in `ds4_set_central_bdaddr()` ("we could put the key here but there is no way to force a re-loading of link keys to the kernel from here") — these two functions are exactly that missing path. |
 | `btd_adapter_set_connectable()` | Explicit page-scan control from the plugin (the Switch and phones stay connectable always; a cable-paired controller waking by paging must be heard even with the GUI's discoverable off). |
 | `property_set_mode()` (DISCOVERABLE case) | With kernel conn control, turning discoverable off normally *also* clears connectable. We skip that swap while cable-paired devices exist, so page scan survives a GUI "discoverable off". |
 | `adapter_start()` | The kernel clears the accept list on power-off; re-add non-temporary cable-paired BR/EDR devices on every power-on so the wake-page is heard even after a bluetoothd restart, with no GUI. |
@@ -668,7 +669,75 @@ the stock 20 s. If you want it snappier, a per-Pro-Controller
 connect would shrink the window without touching the global default for other
 devices — deliberately left as a follow-up.
 
-## 9. Known limitations & open items
+## 9. The firmware's hostname quirk (Bluetooth power profile)
+
+<details>
+<summary><b>The controller checks the host's Bluetooth name — and changes its power/connect behavior on a non-"Nintendo" host.</b> (workaround: verified by many users 2021–2026; firmware mechanism: second-hand RE) — click to expand</summary>
+
+The Pro Controller's firmware switches Bluetooth behavior based on the name of
+the host it connects to. A host whose name does **not** start with `Nintendo`
+gets the controller's **sniff mode**: the device listens at reduced intervals,
+sends no keepalive traffic, and if it does not hear from the host it assumes
+the connection is dead and **disconnects**. Rumble + IMU traffic can
+overwhelm that reduced-bandwidth mode — which is the classic "random
+disconnect with rumble enabled" bug.
+
+The workaround is well-established and still active in 2026: name the
+Bluetooth adapter `Nintendo`, `Nintendo Switch`, or anything starting with
+`Nintendo` (e.g. `Nintendo PC`, `NintendoDeck`):
+
+```bash
+bluetoothctl system-alias "Nintendo Switch"     # BlueZ way (adapter alias)
+# or legacy:  sudo hciconfig hci0 name 'Nintendo'
+# or:         PRETTY_HOSTNAME=Nintendo in /etc/machine-info, then restart bluetooth
+```
+
+**Why it matters here:** the ~2.2 s "host silence kills the link" behavior
+captured in `docs/maki_memories.md` §6 (btmon 2026-08-13) is consistent with
+sniff mode — the controller dropped the link when we sent nothing, and kept
+it alive while host subcommand traffic flowed. ProBlue's per-connection
+serialized setup therefore works *despite* the quirk. Renaming the adapter
+may make the controller hold the link with zero host traffic and page more
+aggressively on wake; this is **not yet A/B-tested** in ProBlue's setup — the
+obvious next experiment is `bluetoothctl system-alias "Nintendo Switch"` vs.
+the default name. If it holds, the plugin could set the adapter alias on
+cable-pair (alongside `btd_adapter_set_connectable()`) to make the fix
+automatic.
+
+**Sources** (primary, 2021–2026):
+
+- ArchWiki — *Gamepad*: "Pro Controller disconnects over Bluetooth with
+  rumble enabled… rename the Bluetooth adapter hostname to `Nintendo` or
+  anything that begins with that substring" —
+  https://wiki.archlinux.org/title/Gamepad
+- `DanielOgorchock/linux` issue #33 — the original hid-nintendo disconnect
+  report; includes the second-hand firmware-RE claim (`memcmp` on
+  `Nintendo Switch` / `NintendoRobson` / `Nintendo`; sniff-mode mechanics)
+  and many user confirmations of the rename fix —
+  https://github.com/DanielOgorchock/linux/issues/33
+- `bluez/bluez` issue #1797 — feature request to auto-spoof the host name
+  for Switch controllers: "generic mode… leads to dropped packets and
+  controller disconnects… prefixed with the string `Nintendo `… all of these
+  problems clear up" — https://github.com/bluez/bluez/issues/1797
+- `ValveSoftware/SteamOS` issue #1262 — Steam Deck users: rename the adapter
+  to something containing "Nintendo" —
+  https://github.com/ValveSoftware/SteamOS/issues/1262
+- `ValveSoftware/steam-for-linux` issue #7631 — the rumble-disconnect
+  reports + the rename fix —
+  https://github.com/ValveSoftware/steam-for-linux/issues/7631
+- `darthcloud/BlueRetro` issue #146 — an independent project that hit the
+  same issue and the same fix — https://github.com/darthcloud/BlueRetro/issues/146
+
+⚠ **Confidence split:** the *mechanism* (hostname `memcmp`, sniff vs
+full-power profile) comes from a second-hand RE summary in issue #33 and is
+**not independently verified**; the *workaround* is verified by many
+independent users across 2021–2026. Also unverified: whether the controller
+switches report format on the Nintendo path (ProBlue's serialized `0x03 30`
+forces full mode regardless, so the setup should win either way — confirm in
+the A/B traces).
+</details>
+
+## 10. Known limitations & open items
 
 - **No kernel patch is used** — ProBlue is BlueZ-only (see §5). The stock
   `hid-nintendo` module keeps its normal behavior: wired USB play works, and
@@ -705,7 +774,7 @@ devices — deliberately left as a follow-up.
 - **No kernel dependency** — the stock `hid-nintendo` module is used as-is;
   nothing ProBlue-specific to rebuild on kernel updates (§7.3).
 
-## 10. Upstreaming notes
+## 11. Upstreaming notes
 
 Upstream status, stated plainly: the BlueZ patch is additive and plausibly
 upstreamable after review. There is no kernel patch — ProBlue is BlueZ-only
@@ -718,7 +787,7 @@ and attribution.
 **BlueZ patch — review concerns.** Plausible after discussion; reviewers
 will push on: the global `property_set_mode` change (discoverable-off no
 longer clears connectable whenever *any* cable-paired device exists — PS3/PS4
-included), the fact that connectable is never turned back off (§8/§9), and
+included), the fact that connectable is never turned back off (§8/§10), and
 the Pro Controller VID/PID special-casing in the generic input profile
 (`profiles/input/device.c`).
 
@@ -734,7 +803,7 @@ Things an upstream reviewer will ask about, answered:
 | Does the stock kernel driver conflict? | No — verified on stock. Over USB it creates the hidraw node the plugin talks to (`HID_CONNECT_HIDRAW`) and its init is runtime-only (writes no SPI pairing records, not re-run on radio events); `procon_usb_session_init()` re-establishes the session regardless. Over BT the controller's input is served by bluetoothd over uhid, so `hid-nintendo` never creates a competing BT input device in this configuration (§5). |
 | What about wired USB play? | It just works — the stock driver creates its normal USB input device alongside the hidraw node BlueZ uses. Nothing is removed; removing it was the fork's cost, and why it was retired (§5). |
 
-## 11. Reverse-engineering sources
+## 12. Reverse-engineering sources
 
 The protocol implementation is based on public reverse-engineering work, plus
 our own live captures. Key sources (links):
@@ -771,7 +840,7 @@ our own live captures. Key sources (links):
   They are not shipped in this repo — they were development scratch — and
   the conclusions they reference are stated in full in §2/§4.
 
-## 12. License
+## 13. License
 
 - The `LICENSE` file at the repo root is the GNU GPL **version 2** reference
   text (upstream GPLv2, June 1991).
@@ -786,7 +855,7 @@ our own live captures. Key sources (links):
 
 This project is not affiliated with or endorsed by Nintendo. "Nintendo",
 "Switch", and "Pro Controller" are trademarks of Nintendo. The RE sources in
-§11 are the work of their respective authors, attributed above.
+§12 are the work of their respective authors, attributed above.
 
 ---
 
