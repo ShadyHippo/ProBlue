@@ -38,29 +38,23 @@ make -j"$(nproc)"
 strings src/bluetoothd | grep -i procon     # "procon: ..." strings
 ./src/bluetoothd --version                  # "Bluetooth daemon 5.84"
 
-# 4. Install (systemd drop-in, so distro updates can't clobber it):
-sudo make install                           # lands in /usr/local
-sudo mkdir -p /etc/systemd/system/bluetooth.service.d
-sudo tee /etc/systemd/system/bluetooth.service.d/ProBlue.conf > /dev/null <<EOF
-[Service]
-ExecStart=
-ExecStart=/usr/local/sbin/bluetoothd
-EOF
-sudo systemctl daemon-reload && sudo systemctl restart bluetooth
-
-# 5. Configure the page scan (catches the controller's brief wake-page):
-sudo tee -a /etc/bluetooth/main.conf > /dev/null <<'EOF'
-PageScanType=0x01
-PageScanInterval=0x0012
-PageScanWindow=0x0012
-EOF
-sudo systemctl restart bluetooth
+# 4. Install — one shot, idempotent (make install + systemd drop-in + page scan):
+bash tools/install.sh ~/ProBlue-build
 ```
 
+> `install.sh` is idempotent (safe to re-run) and handles the fiddly bits:
+> it locates the installed daemon wherever `configure` put it (default
+> `/usr/local/libexec/bluetooth/bluetoothd`, **not** `/usr/local/sbin`),
+> unmasks a previously-masked `bluetooth.service`, writes the drop-in, and
+> sets the page-scan keys in the `[BR]` section — appending them at the end
+> of the file lands them in the wrong section and BlueZ ignores them.
 > `PageScanType` must be the **integer** `0x01`, not the word `interlaced`
 > (BlueZ's parser rejects the word). The empty `ExecStart=` in the drop-in
 > clears the stock unit's path (Debian/Ubuntu use `/usr/libexec/...`); the
-> second line installs yours. Check with `systemctl cat bluetooth | grep -A2 ExecStart`.
+> second line installs yours — `make install` also copies BlueZ's own
+> `bluetooth.service` over the distro unit, and the drop-in keeps your
+> `ExecStart` whichever unit file wins. Check with
+> `systemctl cat bluetooth | grep -A2 ExecStart`.
 
 **How to use:**
 
@@ -239,6 +233,9 @@ artifact; upstream regenerates it with `autoreconf`).
 ### Page-scan tuning (the battery trade-off)
 
 ```ini
+# In /etc/bluetooth/main.conf, under the [BR] section (the keys ship there,
+# commented out — don't append them to the end of the file, BlueZ only parses
+# keys inside their section):
 PageScanType=0x01        # interlaced (INTEGER 0x01, not the word "interlaced")
 PageScanInterval=0x0012
 PageScanWindow=0x0012    # window == interval ⇒ ~100% listen duty
