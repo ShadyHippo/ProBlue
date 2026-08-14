@@ -1,13 +1,6 @@
-# ProBlue — Nintendo Switch Pro Controller native pairing on Linux
+# ProBlue — Nintendo Switch Pro Controller USB native pairing on Linux
 
-**Wire a Pro Controller to a PC and have it pair, reconnect, and work — no GUI
-dialogs, no agents, no hacks. The way the Switch does it.**
-
-ProBlue is a single patch to **BlueZ** (the Linux Bluetooth stack) that makes
-the Nintendo Switch Pro Controller a first-class citizen on Linux: plug it
-into USB, it pairs itself (or re-pairs if it was already known), and from then
-on one button press connects it — with or without any Bluetooth UI open. The
-kernel driver stays **stock**; there is no kernel patch.
+ProBlue is a single patch to **BlueZ** that implements the USB pairing the switch does on Linux. 
 
 ## Table of contents
 
@@ -27,10 +20,6 @@ kernel driver stays **stock**; there is no kernel patch.
 ---
 
 ## 1. Quickstart
-
-One part, and it's all you need: a patched **bluetoothd** built from stock
-BlueZ **5.84** (this repo's `patches/bluez-5.84-procon.patch`). The kernel
-driver stays stock — nothing to build, load, or DKMS (§5).
 
 **Prereq:** the usual BlueZ build chain for your distro (autoconf, automake,
 libtool, pkg-config, glib2, dbus, udev, readline, zstd dev packages).
@@ -76,7 +65,7 @@ sudo systemctl restart bluetooth
 > clears the stock unit's path (Debian/Ubuntu use `/usr/libexec/...`); the
 > second line installs yours. Check with `systemctl cat bluetooth | grep -A2 ExecStart`.
 
-**Moment of truth — with no Bluetooth GUI open:**
+**How to use:**
 
 1. Plug the controller into USB. Within a second or two you should see:
    ```bash
@@ -87,33 +76,7 @@ sudo systemctl restart bluetooth
    # procon: link key stored
    # procon: cable pairing complete
    ```
-2. Unplug it, press any button once — it connects within a second or two:
-   ```bash
-   bluetoothctl devices          # Pro Controller
-   bluetoothctl info <mac>       # Paired: yes, Trusted: yes
-   ```
-3. Open a game — input works over BT.
-
-### Troubleshooting
-
-| Symptom | Likely cause / fix |
-|---|---|
-| `procon: usb 0x80 0x02: no reply` | USB session init failed — check the cable/port and replug (the session is re-established on every plug-in). |
-| No `procon:` logs at all on plug-in | sixaxis plugin not built (`--enable-sixaxis` missing) or udev isn't delivering the event — watch `journalctl -u bluetooth` and replug. |
-| Plug-in logs OK, but no BT reconnect | Page-scan lines missing from `/etc/bluetooth/main.conf` (bluetoothd reads the system file, not the tree's copy). |
-| Controller connects once, then never again | Its single host slot was overwritten (phone/Switch/another PC). Re-dock — ProBlue re-pairs on every dock by design (§2, §6). |
-| Auth failure (HCI error 0x05) on connect | Key not loaded into the kernel — check for `procon: link key stored`, re-dock, restart bluetooth. |
-
-### Upgrading & rolling back
-
-- **Kernel updates:** nothing to do — no ProBlue kernel module exists.
-- **BlueZ updates:** distro updates touch `/usr/bin/bluetoothd`, but your fork
-  lives in `/usr/local` and the drop-in keeps pointing at it. To rebase the
-  patch on a newer BlueZ later, see §10 (porting).
-- **Roll back:** `sudo rm /etc/systemd/system/bluetooth.service.d/ProBlue.conf`,
-  `daemon-reload`, `restart bluetooth`.
-
----
+2. Unplug it, press the face buttons or the L/R buttons for the Pro Controller to "reconnect" to your device:
 
 ## 2. Why this exists
 
@@ -126,12 +89,6 @@ it has stored. The Switch writes that state over a **wired** protocol
 to pair wireless devices over the air, and the controller will sit in
 "Limited Discoverable" mode forever waiting for an inquiry that a paired-only
 host never sends.
-
-Without this patch, plugging the controller in does nothing; a GUI agent
-pairing half-works and breaks the moment no GUI is open. ProBlue fixes the
-root cause: **implement the wired pairing protocol in the Bluetooth stack
-itself**, so pairing is physical (plug the cable in) and everything else just
-works — the way Nintendo designed it.
 
 The wired protocol (public RE work, §11):
 
@@ -154,112 +111,6 @@ The wired protocol (public RE work, §11):
   firmware and its own BT MAC (big-endian; byte-swapped for Linux). This is
   how the host learns which BT device the plugged-in controller *is*, so
   pairing attaches to the right address.
-
-## 3. How a dock + wake + reconnect works, end to end
-
-### First-ever dock (or key lost since last dock)
-
-1. Plug the controller into USB. udev fires; the sixaxis plugin's
-   `setup_device()` runs.
-2. `procon_usb_session_init()` (`0x80 02/03/02`) starts the wired UART
-   session; `subcmd 0x02` learns the controller's BT MAC; `0x08 00` arms it.
-3. Cable authorization is requested; the device is already trusted (physical
-   plug = authorization), so the gate auto-approves with no agent.
-4. `procon_pair()` runs the 3-step: host MAC → fresh LTK (XOR-0xAA, LE) →
-   save. The LTK is byte-reversed, stored bluetoothd-style, and loaded into
-   the kernel via `MGMT_OP_LOAD_LINK_KEYS`.
-5. Device becomes non-temporary, trusted, accept-listed, with the hardcoded
-   HID SDP record. The GUI shows it as "Paired".
-
-### Wake and reconnect (no GUI needed, forever after)
-
-1. Press any button on the sleeping controller. It wakes and **pages** the
-   host — page scan is on (~100% duty) because a cable-paired device exists,
-   even with the GUI's discoverable off.
-2. Kernel accept list says "allowed" → page → accept → Link Key Reply with
-   the fresh key → E0 encryption → PSM 17/19.
-3. `input_device_connected()` runs the **serialized setup** over the BT
-   interrupt channel *before* `hidp_add_connection()`: `0x02 probe → 0x08 00
-   arm → 0x03 30 report-mode full → 0x30 01 player-1 LED`, each sent after
-   the previous one's ack — so the controller sticks, leaves simple mode, and
-   stays wakeable (§6).
-4. Input streams over uhid. When the controller sleeps again, the host drops
-   the idle link (link supervision timeout, §7) and re-enters page-scan
-   state, ready for the next press.
-
-### Multi-device / headphones
-
-Page scan stays on if the adapter is connectable **or** if any accept-list
-device is disconnected (`disconnected_accept_list_entries()`, `hci_sync.c`).
-So headphones connected, or a second controller, does **not** stop the host
-from hearing the wake-page — the controller's accept-list entry being
-disconnected keeps scan on regardless. Verified against the 6.8.0 kernel
-source.
-
-## 4. Architecture
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│ BlueZ (userspace, patched)                                    │
-│   plugins/sixaxis.c        udev: USB plug-in → setup_device   │
-│   profiles/input/procon.c  wired 3-step, session init, arm    │
-│   profiles/input/device.c  per-connection serialized setup    │
-│   src/adapter.c            link-key store, connectable-keep   │
-└──────────────────────────────┬───────────────────────────────┘
-                               │ hidraw (USB)
-┌──────────────────────────────┴───────────────────────────────┐
-│ kernel hid-nintendo (stock)  binds on USB, creates the hidraw │
-│   node BlueZ talks to; its own init never interferes (see §5) │
-└──────────────────────────────┬───────────────────────────────┘
-                               │
-                    Pro Controller (BT BR/EDR)
-```
-
-- **BlueZ patch** — adds the Nintendo wired cable-pairing protocol to the
-  existing "sixaxis" cable-pairing machinery (the PS3/PS4 flow it already
-  has), plus a per-connection serialized setup that arms the controller and
-  switches it to full report mode on every BT connection (§6).
-- **No kernel patch.** The **stock** `hid-nintendo` driver binds the
-  controller on USB and creates the hidraw node BlueZ talks to; its own USB
-  init is runtime-only and never interferes with the wired pairing flow.
-  Over BT, input is served by bluetoothd's HID profile over uhid, so the
-  stock driver never creates a competing BT input device. Verified
-  end-to-end on a stock kernel — see §5.
-
-The controller is always owned by the pairing flow on whichever side it's
-connected: wired subcommands over USB hidraw during docking, input + serialized
-setup over the BT interrupt channel once connected. Nothing fights over the
-controller.
-
-## 5. Why there is no kernel patch (BlueZ-only)
-
-> **Status (2026-08-13): confirmed — no kernel patch is needed.** The whole
-> flow — wired pairing, unplug, button press, BT reconnect + input — works on
-> the **stock Ubuntu 6.8.0-137 `hid-nintendo`** module with the BlueZ patch
-> alone. ProBlue is BlueZ-only: there is no kernel patch to build or install.
-
-**Why not?** The original concern was that the stock driver's USB init sends
-`0x80 04` (USB-only lock) and config subcommands, which could knock the
-controller out of pair mode or fight the wired subcommands. In practice:
-
-- The BlueZ patch drives the entire wired flow itself over the plugin's own
-  hidraw fd — `procon_usb_session_init()` re-establishes the USB session
-  (`0x80 02/03/02`) and every subcommand runs over that fd, which the
-  **stock** driver also creates (`HID_CONNECT_HIDRAW`).
-- The stock driver's USB init is runtime-only: it writes no SPI pairing
-  records and is not re-run on radio events, so it does not interfere.
-- The BT side never conflicts either: with BlueZ 5.84 the controller's BT
-  input is served by bluetoothd's HID profile over **uhid**, so the stock
-  `hid-nintendo` driver does not create a competing BT input device.
-
-**What this means:** install **only** the BlueZ patch (§1). The kernel
-module stays stock — nothing to build, load, or DKMS, and nothing to
-rebuild on kernel updates.
-
-**Verification:** stock kernel + patched BlueZ 5.84, 2026-08-13: dock (wired
-3-step pairing, link key registered) → unplug → button press → BT connect +
-input, reliably. The full evidence trail is in `docs/maki_memories.md`
-(sections 3 and 6).
 
 ## 6. The BlueZ patch — file by file
 
@@ -415,7 +266,7 @@ nearly free compared to active traffic).
 Two gentler options:
 
 - **Accept it** — the simplest, and what this repo ships.
-- **Dynamic (planned)** — call `btd_adapter_set_fast_connectable(adapter,
+- **Dynamic (Requires further work)** — call `btd_adapter_set_fast_connectable(adapter,
   true)` from the plugin only while a cable-paired controller exists, false
   when it disconnects. The BlueZ patch already exports the helper; only the
   plugin call sites are missing.
@@ -505,10 +356,8 @@ the A/B traces).
 
 ## 9. Known limitations & open items
 
-- **No kernel patch** — ProBlue is BlueZ-only (see §5). The stock
-  `hid-nintendo` module keeps its normal behavior: wired USB play works, and
-  kernel-served BT input works where the kernel HIDP path is used (systems
-  without uhid).
+- **No kernel patch** — ProBlue is BlueZ-only (see §5). The `hid-nintendo`
+  kernel module keeps no longer has USB play though. It connects to BT while wired. 
 - **Page scan is kept on (connectable) indefinitely once a cable-paired
   device has been plugged in.** `setup_device()` calls
   `btd_adapter_set_connectable(adapter, true)` and nothing reverts it, and
@@ -516,44 +365,23 @@ the A/B traces).
   cable-paired devices exist. This is the ~100% page-scan duty trade-off
   documented in §7; a dynamic "only while a controller is present" toggle is
   planned but not implemented.
-- **One host slot on the controller.** The Pro Controller stores one pairing
-  record; pairing to another host (phone, Switch, second PC) overwrites the
-  PC's entry. Re-docking to the PC fixes it (the always-re-pair-on-dock
-  behavior makes this self-healing — verified).
 - **`Authorization request for non-connected device!?`** — observed once in
-  the reconnect dance and treated as benign: cable pairing authorizes (and
-  trusts) the device while it is still physically on USB, i.e. before the BT
+  the reconnect dance and worked around: cable pairing authorizes (and
+  automatically trusts) the device while it is still physically on USB, i.e. before the BT
   link exists, so bluetoothd's authorization gate can fire for a device that
   is not (yet) connected. It did not block pairing or reconnects and has not
   recurred; if it appears in normal use, capture `journalctl -u bluetooth`
   around it and report it.
-- **Link key in logs.** The LTK is stored, never logged (a cleartext log was
-  removed during cleanup — link keys must not appear in logs).
-- **Two controllers.** Each has its own accept-list entry; page scan stays on
-  while either is disconnected (kernel-verified). Multi-controller live
-  testing is on the to-do list.
 - **BlueZ 5.84 only** — the patch is against 5.84; porting notes for newer
   versions are in the file comments (symbols are stable across 5.8x).
-- **No kernel dependency** — the stock `hid-nintendo` module is used as-is;
-  nothing ProBlue-specific to rebuild on kernel updates (§1).
 
 ## 10. Upstreaming notes
 
-Upstream status, stated plainly: the BlueZ patch is additive and plausibly
-upstreamable after review. There is no kernel patch — ProBlue is BlueZ-only
-(§5). Everything is GPL-2.0-or-later with BlueZ-style headers and
-attribution.
+**BlueZ patch — review concerns.** 
+  - global `property_set_mode` change (discoverable-off no longer clears connectable whenever *any* cable-paired device exists — PS3/PS4 included) 
+  - the Pro Controller VID/PID special-casing in the generic input profile (`profiles/input/device.c`).
 
-**BlueZ patch — review concerns.** Plausible after discussion; reviewers
-will push on: the global `property_set_mode` change (discoverable-off no
-longer clears connectable whenever *any* cable-paired device exists — PS3/PS4
-included), the fact that connectable is never turned back off (§7/§9), and
-the Pro Controller VID/PID special-casing in the generic input profile
-(`profiles/input/device.c`).
-
-Things an upstream reviewer will ask about, answered:
-
-| Question | Answer |
+| Blockers | Workarounds |
 |---|---|
 | Why not just use over-the-air SSP? | The controller does not SSP on connect; it connects only to the stored-MAC+key host. Wired pairing is the vendor mechanism. |
 | Why re-pair on every dock? | The Switch does (c2j capture: host-record push at every connect), there is no "read stored central" subcommand, and the controller's single slot can be silently overwritten by another host. Fresh key per dock is the robust model. |
