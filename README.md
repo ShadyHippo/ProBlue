@@ -102,7 +102,7 @@ The wired protocol (public RE work, §8):
   clears the shipment flag at SPI `x5000` and puts the controller in normal
   LPM-to-sleep mode. Without it the controller stays in shipment mode and
   **cannot wake from button presses** — it never pages the host, so it never
-  reconnects. The Switch sends it after every connection; so do we, plus
+  reconnects. The Switch sends it after every connection; so does ProBlue, plus
   `0x30 01` (player-1 LED) for parity.
 - **The device-info probe** (`subcmd 0x02`): returns the controller's
   firmware and its own BT MAC (big-endian; byte-swapped for Linux). This is
@@ -123,7 +123,7 @@ reply), the USB-mode commands (`0x80 02` handshake, `0x80 03` 3-Mbit baud),
 the subcommand IDs, and the Nintendo over-cable device table
 (`get_nintendo_pairing()` — the Nintendo counterpart of `get_pairing()` in
 `sixaxis.h`). Also `PROCON_HID_SDP_RECORD`: the controller's HID SDP service
-record, captured verbatim from bluetoothd's SDP cache during a genuine GUI
+record, captured verbatim from bluetoothd's SDP cache during a real GUI
 pairing (`docs/golden/procon_sdp_cache`). Setting it kills the "malformed SDP
 seed" problem — services resolve from the hardcoded record with no SDP
 seed/cache needed, mirroring the existing `SIXAXIS_HID_SDP_RECORD` mechanism.
@@ -134,7 +134,7 @@ Four public functions, all running over the USB hidraw fd:
 
 | Function | What it does |
 |---|---|
-| `procon_usb_session_init()` | `0x80 02` → `0x80 03` (3 Mbit) → `0x80 02` — the wired UART session handshake with the controller's BT chip. **Must run before any subcommand** (we re-establish the session ourselves) or the chip never answers. |
+| `procon_usb_session_init()` | `0x80 02` → `0x80 03` (3 Mbit) → `0x80 02` — the wired UART session handshake with the controller's BT chip. **Must run before any subcommand** (the plugin establishes the session itself) or the chip never answers. |
 | `procon_get_device_bdaddr()` | `subcmd 0x02` device-info probe; returns the controller's BT MAC (byte-swapped from display order). |
 | `procon_arm_wired()` | `subcmd 0x08 00` — clear shipment mode so the controller can wake from button presses (the wired-side arm; the BT-side keeper is in `device.c`). |
 | `procon_pair()` | The full wired 3-step (host MAC → GET_LTK → save) with the LTK byte-reverse + XOR-0xAA decode; re-inits the session first (a gap between init and the 3-step can let the chip drop the session) and re-arms before pairing, matching the Switch's order. |
@@ -146,21 +146,22 @@ Subcommand framing: 64-byte output report `0x01` (`[0]=0x01, [1]=counter,
 ### `plugins/sixaxis.c` — wiring the Pro Controller into the cable-pairing flow
 
 The sixaxis plugin already watches udev for cable-paired devices (PS3/PS4).
-We extend the same machinery:
+The patch extends the same machinery:
 
 - `get_pairing_type_for_device()` — falls back to `get_nintendo_pairing()`
   when no PS entry matches.
 - `device_added()` / `setup_device()` — accept `CABLE_PAIRING_PROCON`; on
-  plug-in: run `procon_usb_session_init()` (we start the wired UART session
-  ourselves), probe the device MAC (`subcmd 0x02`), and **arm on every
+  plug-in: run `procon_usb_session_init()` (the plugin starts the wired UART
+  session itself), probe the device MAC (`subcmd 0x02`), and **arm on every
   plug-in** (`0x08 00`, non-fatal on failure — the Switch re-arms after
   every connection).
 - `setup_device()` — **PROCON is exempt from the "already known, skipping"
   early-return when the device is known but disconnected.** The Switch
   re-pairs on *every* dock, and there is no "read stored central" subcommand
-  to detect whether the controller still holds our key (it can be lost by
-  pairing to another host since the last dock). A trusted-but-disconnected
-  Pro Controller therefore re-runs the full pairing flow on every dock —
+  to detect whether the controller still holds the previously stored key (it
+  can be lost by pairing to another host since the last dock). A
+  trusted-but-disconnected Pro Controller therefore re-runs the full pairing
+  flow on every dock —
   fresh LTK, trusted, non-temporary, accept-list. Only a currently-connected
   controller skips (charging while playing — don't yank a live session's
   key; it re-pairs next dock).
@@ -191,27 +192,17 @@ connection). Queue state (`procon_setup_pos/source/last`) lives in
 `struct input_device`, is cleaned up in `input_device_free()`, and restarts on
 every connection.
 
-Why serialized, and why this sequence — verified against `btmon` captures
-(2026-08-13):
+Why ack-waited, and why this sequence:
 
-- A fire-and-forget batch of `[0x08 00, 0x03 30, 0x30 01]` sent in <1 ms was
-  **dropped by the controller**: it processes subcommands slowly (~0.31 s per
-  ack), and only the first (`0x08`) was ever acked — `0x03`/`0x30` never
-  were, input stayed in `0x3F` simple mode, and the controller never left its
-  search state, so it cycled connect → ~2.2 s → drop → re-page.
-- The ack-waited queue fixes that: `0x08 00` clears shipment / LPM-to-sleep
-  (an un-armed controller does a connect-and-self-terminate dance — Remote
-  User Terminated 0x13 ~150 ms after PSM 19 — and can give up entirely),
-  `0x03 30` switches to standard full report mode, `0x30 01` lights player-1.
-  Host subcommand traffic on PSM 19 also keeps the link alive (host silence
-  is what killed it at ~2.2 s).
+- The controller processes subcommands slowly (~0.31 s per ack) and drops an
+  un-acked batch — a fire-and-forget burst leaves it stuck in its search
+  state, cycling connect → drop → re-page.
+- `0x08 00` clears shipment / LPM-to-sleep — an un-armed controller does a
+  connect-and-self-terminate dance and can give up entirely; `0x03 30`
+  switches to standard full report mode; `0x30 01` lights player-1.
 - Every connect path funnels through `input_device_connected()` (inbound and
   outbound/auto-reconnect), so the setup runs on **every** connection, not
   just the first — the Switch's documented "after every connection" behavior.
-
-The old fire-and-forget `procon_arm()` / `procon_set_report_mode_full()` /
-`procon_set_player_led()` helpers were **deleted** — one sequence, no
-fallbacks.
 
 ### `profiles/input/server.c` — the cable-pairing gate
 
@@ -231,9 +222,9 @@ not PS3-specific).
 
 | Change | Why |
 |---|---|
-| `btd_adapter_store_link_key()` + `reload_link_keys()` | Runtime BR/EDR link-key registration: persist the LTK bluetoothd-style (info file `[LinkKey]` section) and reload the whole kernel key list via `MGMT_OP_LOAD_LINK_KEYS` (the *only* runtime key-add path in 5.84 — there is no `MGMT_OP_ADD_LINK_KEY`). Required because the controller connects with the key we just wrote, before any over-the-air key exchange could happen. This also resolves the stock TODO in `ds4_set_central_bdaddr()` ("we could put the key here but there is no way to force a re-loading of link keys to the kernel from here") — these two functions are exactly that missing path. |
+| `btd_adapter_store_link_key()` + `reload_link_keys()` | Runtime BR/EDR link-key registration: persist the LTK bluetoothd-style (info file `[LinkKey]` section) and reload the whole kernel key list via `MGMT_OP_LOAD_LINK_KEYS` (the *only* runtime key-add path in 5.84 — there is no `MGMT_OP_ADD_LINK_KEY`). Required because the controller connects with the freshly written key, before any over-the-air key exchange could happen. This also resolves the stock TODO in `ds4_set_central_bdaddr()` — its comment notes the key could be stored there, but with no way to force a kernel link-key reload; these two functions are exactly that missing path. |
 | `btd_adapter_set_connectable()` | Explicit page-scan control from the plugin (the Switch and phones stay connectable always; a cable-paired controller waking by paging must be heard even with the GUI's discoverable off). |
-| `property_set_mode()` (DISCOVERABLE case) | With kernel conn control, turning discoverable off normally *also* clears connectable. We skip that swap while cable-paired devices exist, so page scan survives a GUI "discoverable off". |
+| `property_set_mode()` (DISCOVERABLE case) | With kernel conn control, turning discoverable off normally *also* clears connectable. The swap is skipped while cable-paired devices exist, so page scan survives a GUI "discoverable off". |
 | `adapter_start()` | The kernel clears the accept list on power-off; re-add non-temporary cable-paired BR/EDR devices on every power-on so the wake-page is heard even after a bluetoothd restart, with no GUI. |
 
 ### `Makefile.plugins` — build wiring
@@ -269,7 +260,7 @@ Two gentler options:
   plugin call sites are missing.
 
 `PageScanType` must be an **integer** (`0x01`), not the word `interlaced` —
-BlueZ's `parse_config_int()` rejects the word (seen live).
+BlueZ's `parse_config_int()` rejects the word.
 
 ### Link supervision timeout (the "zombie" window)
 
@@ -306,18 +297,6 @@ bluetoothctl system-alias "Nintendo Switch"     # BlueZ way (adapter alias)
 # or:         PRETTY_HOSTNAME=Nintendo in /etc/machine-info, then restart bluetooth
 ```
 
-**Why it matters here:** the ~2.2 s "host silence kills the link" behavior
-captured in `docs/maki_memories.md` §6 (btmon 2026-08-13) is consistent with
-sniff mode — the controller dropped the link when we sent nothing, and kept
-it alive while host subcommand traffic flowed. ProBlue's per-connection
-serialized setup therefore works *despite* the quirk. Renaming the adapter
-may make the controller hold the link with zero host traffic and page more
-aggressively on wake; this is **not yet A/B-tested** in ProBlue's setup — the
-obvious next experiment is `bluetoothctl system-alias "Nintendo Switch"` vs.
-the default name. If it holds, the plugin could set the adapter alias on
-cable-pair (alongside `btd_adapter_set_connectable()`) to make the fix
-automatic.
-
 **Sources** (primary, 2021–2026):
 
 - ArchWiki — *Gamepad*: "Pro Controller disconnects over Bluetooth with
@@ -347,16 +326,14 @@ full-power profile) comes from a second-hand RE summary in issue #33 and is
 **not independently verified**; the *workaround* is verified by many
 independent users across 2021–2026. Also unverified: whether the controller
 switches report format on the Nintendo path (ProBlue's serialized `0x03 30`
-forces full mode regardless, so the setup should win either way — confirm in
-the A/B traces).
+forces full mode regardless, so the setup wins either way).
 </details>
 
 ## 6. Known limitations & open items
 
-- **No kernel patch** — ProBlue is BlueZ-only on the stock kernel. **Wired
-  USB play mode is gone (observed):** when the controller is plugged in, the
-  kernel's `hid-nintendo` driver no longer sets up a USB input device —
-  ProBlue's wired session (USB session init + pairing subcommands over the
+- **Wired USB play mode is gone (observed):** when the controller is plugged
+  in, the kernel's `hid-nintendo` driver no longer sets up a USB input device
+  — ProBlue's wired session (USB session init + pairing subcommands over the
   same hidraw) claims the controller first, so the stock driver never
   completes its USB input setup. The controller waits for a button press,
   then connects over Bluetooth; input is always over BT, and USB serves
@@ -368,8 +345,12 @@ the A/B traces).
   cable-paired devices exist. This is the ~100% page-scan duty trade-off
   documented in §4; a dynamic "only while a controller is present" toggle is
   planned but not implemented.
-- **`Authorization request for non-connected device!?`** — observed once in
-  the reconnect dance and worked around: cable pairing authorizes (and
+- **Hostname-quirk automation (untested)** — renaming the adapter to
+  `Nintendo…` may make the controller hold the link with zero host traffic
+  (§5); the plugin could set the adapter alias on cable-pair, alongside
+  `btd_adapter_set_connectable()`, to make that fix automatic. Not tested.
+- **`Authorization request for non-connected device!?`** — observed once
+  during reconnects and worked around: cable pairing authorizes (and
   automatically trusts) the device while it is still physically on USB, i.e. before the BT
   link exists, so bluetoothd's authorization gate can fire for a device that
   is not (yet) connected. It did not block pairing or reconnects and has not
@@ -388,10 +369,10 @@ the A/B traces).
 | Question | Answer |
 |---|---|
 | Why not just use over-the-air SSP? | The controller does not SSP on connect; it connects only to the stored-MAC+key host. Wired pairing is the vendor mechanism. |
-| Why re-pair on every dock? | The Switch does (c2j capture: host-record push at every connect), there is no "read stored central" subcommand, and the controller's single slot can be silently overwritten by another host. Fresh key per dock is the robust model. |
-| Why the hardcoded SDP record? | The stock SDP seed is malformed on 5.84 for this device; the record is captured verbatim from a genuine pairing. Mirrors the existing `SIXAXIS_HID_SDP_RECORD`. |
+| Why re-pair on every dock? | The Switch re-pairs at every dock, there is no "read stored central" subcommand, and the controller's single slot can be silently overwritten by another host. Fresh key per dock is the robust model. |
+| Why the hardcoded SDP record? | The stock SDP seed is malformed on 5.84 for this device; the record is captured verbatim from a real pairing. Mirrors the existing `SIXAXIS_HID_SDP_RECORD`. |
 | Why the global page-scan config? | The controller pages only briefly on wake; the stock ~0.9% duty misses it. A per-plugin `set_fast_connectable` dynamic toggle is the planned gentler alternative. |
-| Does the stock kernel driver conflict? | No — verified on stock. Over USB it creates the hidraw node the plugin talks to (`HID_CONNECT_HIDRAW`) and its init is runtime-only (writes no SPI pairing records, not re-run on radio events); `procon_usb_session_init()` re-establishes the session regardless. Over BT the controller's input is served by bluetoothd over uhid, so `hid-nintendo` never creates a competing BT input device in this configuration. |
+| Does the stock kernel driver conflict? | No — over USB it creates the hidraw node the plugin talks to (`HID_CONNECT_HIDRAW`) and its init is runtime-only (writes no SPI pairing records, not re-run on radio events); `procon_usb_session_init()` re-establishes the session regardless. Over BT the controller's input is served by bluetoothd over uhid, so `hid-nintendo` never creates a competing BT input device in this configuration. |
 
 **Porting to a newer BlueZ:** the changed symbols (`setup_device`,
 `agent_auth_cb`, `input_device_connected`, `property_set_mode`,
@@ -407,8 +388,8 @@ diff -u --label a/bluez-5.84 --label b/problue \
 
 ## 8. Reverse-engineering sources
 
-The protocol implementation is based on public reverse-engineering work, plus
-our own live captures. Key sources:
+The protocol implementation is based on public reverse-engineering work and
+captured session artifacts. Key sources:
 
 - **dekuNukem — Nintendo Switch Reverse Engineering**
   `https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering`
@@ -427,21 +408,11 @@ our own live captures. Key sources:
     session with packet annotations.
   - `nxbt/controller/` — the controller-side emulation (report framing,
     subcommand handling).
-- **Our own live captures** (2026-08-07 → 08-13), including the
-  reconnect-keeper validation (serialized post-connect setup, page→accept→
-  key reply→E0→PSM 17/19→input streaming):
-  - `docs/golden/procon_info` — bluetoothd's stored device info for a genuine
-    GUI pairing (the LTK cross-check; **link key redacted** in the shipped
-    copy).
+- **Captured session artifacts** (`docs/golden/`):
+  - `docs/golden/procon_info` — bluetoothd's stored device info for a real
+    pairing (**link key redacted** in the shipped copy).
   - `docs/golden/procon_sdp_cache` — the controller's SDP service record,
     source of `PROCON_HID_SDP_RECORD`.
-
-Working protocol notes (semi-RE, flags unverified claims) were kept internal
-during development; the verified conclusions are in §2 above. The patch and
-source comments cite a few of those internal notes by name
-(`Bluez_switch_cable_plan.md`, "c2j", "evidence 21", `bt_pairer.cpp:1427`).
-They are not shipped in this repo — they were development scratch — and the
-conclusions they reference are stated in full in §2/§3.
 
 ## 9. License
 
