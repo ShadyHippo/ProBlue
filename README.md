@@ -1,21 +1,18 @@
 # ProBlue — Nintendo Switch Pro Controller USB native pairing on Linux
 
-ProBlue is a single patch to **BlueZ** that implements the USB pairing the switch does on Linux. 
+ProBlue is a single patch to **BlueZ** that implements the USB pairing the switch does on Linux.
 
 ## Table of contents
 
 1. [Quickstart](#1-quickstart)
 2. [Why this exists](#2-why-this-exists)
-3. [How a dock + wake + reconnect works, end to end](#3-how-a-dock--wake--reconnect-works-end-to-end)
-4. [Architecture](#4-architecture)
-5. [Why there is no kernel patch (BlueZ-only)](#5-why-there-is-no-kernel-patch-bluez-only)
-6. [The BlueZ patch — file by file](#6-the-bluez-patch--file-by-file)
-7. [Configuration notes](#7-configuration-notes)
-8. [The firmware's hostname quirk (Bluetooth power profile)](#8-the-firmwares-hostname-quirk-bluetooth-power-profile)
-9. [Known limitations & open items](#9-known-limitations--open-items)
-10. [Upstreaming notes](#10-upstreaming-notes)
-11. [Reverse-engineering sources](#11-reverse-engineering-sources)
-12. [License](#12-license)
+3. [The BlueZ patch — file by file](#3-the-bluez-patch--file-by-file)
+4. [Configuration notes](#4-configuration-notes)
+5. [The firmware's hostname quirk (Bluetooth power profile)](#5-the-firmwares-hostname-quirk-bluetooth-power-profile)
+6. [Known limitations & open items](#6-known-limitations--open-items)
+7. [Upstreaming notes](#7-upstreaming-notes)
+8. [Reverse-engineering sources](#8-reverse-engineering-sources)
+9. [License](#9-license)
 
 ---
 
@@ -76,7 +73,7 @@ sudo systemctl restart bluetooth
    # procon: link key stored
    # procon: cable pairing complete
    ```
-2. Unplug it, press the face buttons or the L/R buttons for the Pro Controller to "reconnect" to your device:
+2. Unplug it, press the face buttons or the L/R buttons for the Pro Controller to "reconnect" to your device.
 
 ## 2. Why this exists
 
@@ -90,7 +87,7 @@ to pair wireless devices over the air, and the controller will sit in
 "Limited Discoverable" mode forever waiting for an inquiry that a paired-only
 host never sends.
 
-The wired protocol (public RE work, §11):
+The wired protocol (public RE work, §8):
 
 - **The wired 3-step pairing** (`subcmd 0x01`):
   1. `x01 x01 {host MAC LE}` — send the host's address; the controller
@@ -112,7 +109,7 @@ The wired protocol (public RE work, §11):
   how the host learns which BT device the plugged-in controller *is*, so
   pairing attaches to the right address.
 
-## 6. The BlueZ patch — file by file
+## 3. The BlueZ patch — file by file
 
 All changes are relative to stock BlueZ **5.84** (the patch applies to the
 released 5.84 tarball from kernel.org). The patched source files ship in
@@ -246,7 +243,7 @@ The `if SIXAXIS` block gains `profiles/input/procon.c` + `procon.h`.
 upstream-able location (`Makefile.in` in the tree is the regenerated
 artifact; upstream regenerates it with `autoreconf`).
 
-## 7. Configuration notes
+## 4. Configuration notes
 
 ### Page-scan tuning (the battery trade-off)
 
@@ -286,7 +283,7 @@ the stock 20 s. If you want it snappier, a per-Pro-Controller
 connect would shrink the window without touching the global default for other
 devices — deliberately left as a follow-up.
 
-## 8. The firmware's hostname quirk (Bluetooth power profile)
+## 5. The firmware's hostname quirk (Bluetooth power profile)
 
 <details>
 <summary><b>The controller checks the host's Bluetooth name — and changes its power/connect behavior on a non-"Nintendo" host.</b> (workaround: verified by many users 2021–2026; firmware mechanism: second-hand RE) — click to expand</summary>
@@ -354,16 +351,22 @@ forces full mode regardless, so the setup should win either way — confirm in
 the A/B traces).
 </details>
 
-## 9. Known limitations & open items
+## 6. Known limitations & open items
 
-- **No kernel patch** — ProBlue is BlueZ-only (see §5). The `hid-nintendo`
-  kernel module keeps no longer has USB play though. It connects to BT while wired. 
+- **No kernel patch** — ProBlue is BlueZ-only on the stock kernel. **Wired
+  USB play mode is gone (observed):** when the controller is plugged in, the
+  kernel's `hid-nintendo` driver no longer sets up a USB input device —
+  ProBlue's wired session (USB session init + pairing subcommands over the
+  same hidraw) claims the controller first, so the stock driver never
+  completes its USB input setup. The controller waits for a button press,
+  then connects over Bluetooth; input is always over BT, and USB serves
+  pairing + charging only.
 - **Page scan is kept on (connectable) indefinitely once a cable-paired
   device has been plugged in.** `setup_device()` calls
   `btd_adapter_set_connectable(adapter, true)` and nothing reverts it, and
   turning the GUI's discoverable off no longer clears connectable while
   cable-paired devices exist. This is the ~100% page-scan duty trade-off
-  documented in §7; a dynamic "only while a controller is present" toggle is
+  documented in §4; a dynamic "only while a controller is present" toggle is
   planned but not implemented.
 - **`Authorization request for non-connected device!?`** — observed once in
   the reconnect dance and worked around: cable pairing authorizes (and
@@ -375,19 +378,20 @@ the A/B traces).
 - **BlueZ 5.84 only** — the patch is against 5.84; porting notes for newer
   versions are in the file comments (symbols are stable across 5.8x).
 
-## 10. Upstreaming notes
+## 7. Upstreaming notes
 
-**BlueZ patch — review concerns.** 
-  - global `property_set_mode` change (discoverable-off no longer clears connectable whenever *any* cable-paired device exists — PS3/PS4 included) 
-  - the Pro Controller VID/PID special-casing in the generic input profile (`profiles/input/device.c`).
+**BlueZ patch — review concerns.**
 
-| Blockers | Workarounds |
+- global `property_set_mode` change (discoverable-off no longer clears connectable whenever *any* cable-paired device exists — PS3/PS4 included).
+- the Pro Controller VID/PID special-casing in the generic input profile (`profiles/input/device.c`).
+
+| Question | Answer |
 |---|---|
 | Why not just use over-the-air SSP? | The controller does not SSP on connect; it connects only to the stored-MAC+key host. Wired pairing is the vendor mechanism. |
 | Why re-pair on every dock? | The Switch does (c2j capture: host-record push at every connect), there is no "read stored central" subcommand, and the controller's single slot can be silently overwritten by another host. Fresh key per dock is the robust model. |
 | Why the hardcoded SDP record? | The stock SDP seed is malformed on 5.84 for this device; the record is captured verbatim from a genuine pairing. Mirrors the existing `SIXAXIS_HID_SDP_RECORD`. |
 | Why the global page-scan config? | The controller pages only briefly on wake; the stock ~0.9% duty misses it. A per-plugin `set_fast_connectable` dynamic toggle is the planned gentler alternative. |
-| Does the stock kernel driver conflict? | No — verified on stock. Over USB it creates the hidraw node the plugin talks to (`HID_CONNECT_HIDRAW`) and its init is runtime-only (writes no SPI pairing records, not re-run on radio events); `procon_usb_session_init()` re-establishes the session regardless. Over BT the controller's input is served by bluetoothd over uhid, so `hid-nintendo` never creates a competing BT input device in this configuration (§5). |
+| Does the stock kernel driver conflict? | No — verified on stock. Over USB it creates the hidraw node the plugin talks to (`HID_CONNECT_HIDRAW`) and its init is runtime-only (writes no SPI pairing records, not re-run on radio events); `procon_usb_session_init()` re-establishes the session regardless. Over BT the controller's input is served by bluetoothd over uhid, so `hid-nintendo` never creates a competing BT input device in this configuration. |
 
 **Porting to a newer BlueZ:** the changed symbols (`setup_device`,
 `agent_auth_cb`, `input_device_connected`, `property_set_mode`,
@@ -401,7 +405,7 @@ diff -u --label a/bluez-5.84 --label b/problue \
     <pristine-tree> <patched-tree> > patches/bluez-5.84-procon.patch
 ```
 
-## 11. Reverse-engineering sources
+## 8. Reverse-engineering sources
 
 The protocol implementation is based on public reverse-engineering work, plus
 our own live captures. Key sources:
@@ -437,9 +441,9 @@ during development; the verified conclusions are in §2 above. The patch and
 source comments cite a few of those internal notes by name
 (`Bluez_switch_cable_plan.md`, "c2j", "evidence 21", `bt_pairer.cpp:1427`).
 They are not shipped in this repo — they were development scratch — and the
-conclusions they reference are stated in full in §2/§6.
+conclusions they reference are stated in full in §2/§3.
 
-## 12. License
+## 9. License
 
 - The `LICENSE` file at the repo root is the GNU GPL **version 2** reference
   text (upstream GPLv2, June 1991).
@@ -451,7 +455,7 @@ conclusions they reference are stated in full in §2/§6.
 
 This project is not affiliated with or endorsed by Nintendo. "Nintendo",
 "Switch", and "Pro Controller" are trademarks of Nintendo. The RE sources in
-§11 are the work of their respective authors, attributed above.
+§8 are the work of their respective authors, attributed above.
 
 ---
 
