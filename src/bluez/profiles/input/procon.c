@@ -8,9 +8,8 @@
  *  Nintendo Switch Pro Controller wired cable-pairing protocol (see the
  *  RE sources in README §11).
  *
- *  All subcmds run over the hidraw fd of the USB-connected controller. The
- *  kernel fork's hid-nintendo driver keeps the controller's BT radio up while
- *  USB is connected (joycon_is_passive), which is what makes this possible.
+ *  All subcmds run over the hidraw fd of the USB-connected controller, which
+ *  the stock hid-nintendo driver creates on bind (HID_CONNECT_HIDRAW).
  */
 
 #ifdef HAVE_CONFIG_H

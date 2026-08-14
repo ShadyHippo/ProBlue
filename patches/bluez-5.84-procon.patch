@@ -1,6 +1,6 @@
 diff -u -r -N a/Makefile.plugins b/Makefile.plugins
---- a/Makefile.plugins	2026-08-13 16:07:53.465798572 -0400
-+++ b/Makefile.plugins	2026-08-13 16:07:53.603798932 -0400
+--- a/Makefile.plugins	2025-03-17 07:17:14.000000000 -0400
++++ b/Makefile.plugins	2026-08-14 10:40:26.530878213 -0400
 @@ -107,7 +107,8 @@
  
  if SIXAXIS
@@ -12,8 +12,8 @@ diff -u -r -N a/Makefile.plugins b/Makefile.plugins
  endif
  
 diff -u -r -N a/plugins/sixaxis.c b/plugins/sixaxis.c
---- a/plugins/sixaxis.c	2026-08-13 16:07:53.508798685 -0400
-+++ b/plugins/sixaxis.c	2026-08-13 16:07:53.602798930 -0400
+--- a/plugins/sixaxis.c	2025-09-18 14:08:44.000000000 -0400
++++ b/plugins/sixaxis.c	2026-08-14 10:40:26.529878210 -0400
 @@ -27,8 +27,10 @@
  #include <libudev.h>
  
@@ -125,8 +125,8 @@ diff -u -r -N a/plugins/sixaxis.c b/plugins/sixaxis.c
  	struct btd_device *device;
  	struct authentication_closure *closure;
  
-+	/* Wake the BT chip's UART session before ANY subcommand — the passive
-+	 * kernel fork sends nothing, so without this no subcmd gets a reply
++	/* Wake the BT chip's UART session before ANY subcommand — we start the
++	 * wired UART session ourselves, so without this no subcmd gets a reply
 +	 * (see procon_usb_session_init(), at session start). */
 +	if (cp->type == CABLE_PAIRING_PROCON &&
 +				procon_usb_session_init(fd) < 0)
@@ -225,8 +225,8 @@ diff -u -r -N a/plugins/sixaxis.c b/plugins/sixaxis.c
  		return;
  	}
 diff -u -r -N a/profiles/input/device.c b/profiles/input/device.c
---- a/profiles/input/device.c	2026-08-13 16:07:53.503798672 -0400
-+++ b/profiles/input/device.c	2026-08-13 16:07:53.602798930 -0400
+--- a/profiles/input/device.c	2025-09-18 14:08:44.000000000 -0400
++++ b/profiles/input/device.c	2026-08-14 10:40:26.529878210 -0400
 @@ -48,6 +48,7 @@
  #include "device.h"
  #include "hidp_defs.h"
@@ -444,8 +444,8 @@ diff -u -r -N a/profiles/input/device.c b/profiles/input/device.c
  	int err;
 diff -u -r -N a/profiles/input/procon.c b/profiles/input/procon.c
 --- a/profiles/input/procon.c	1969-12-31 19:00:00.000000000 -0500
-+++ b/profiles/input/procon.c	2026-08-13 16:07:53.602798930 -0400
-@@ -0,0 +1,282 @@
++++ b/profiles/input/procon.c	2026-08-14 10:40:26.529878210 -0400
+@@ -0,0 +1,281 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later
 +/*
 + *
@@ -456,9 +456,8 @@ diff -u -r -N a/profiles/input/procon.c b/profiles/input/procon.c
 + *  Nintendo Switch Pro Controller wired cable-pairing protocol (see the
 + *  RE sources in README §11).
 + *
-+ *  All subcmds run over the hidraw fd of the USB-connected controller. The
-+ *  kernel fork's hid-nintendo driver keeps the controller's BT radio up while
-+ *  USB is connected (joycon_is_passive), which is what makes this possible.
++ *  All subcmds run over the hidraw fd of the USB-connected controller, which
++ *  the stock hid-nintendo driver creates on bind (HID_CONNECT_HIDRAW).
 + */
 +
 +#ifdef HAVE_CONFIG_H
@@ -730,7 +729,7 @@ diff -u -r -N a/profiles/input/procon.c b/profiles/input/procon.c
 +}
 diff -u -r -N a/profiles/input/procon.h b/profiles/input/procon.h
 --- a/profiles/input/procon.h	1969-12-31 19:00:00.000000000 -0500
-+++ b/profiles/input/procon.h	2026-08-13 16:07:53.602798930 -0400
++++ b/profiles/input/procon.h	2026-08-14 10:40:26.529878210 -0400
 @@ -0,0 +1,130 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +/*
@@ -863,8 +862,8 @@ diff -u -r -N a/profiles/input/procon.h b/profiles/input/procon.h
 +
 +#endif /* _PROCON_H_ */
 diff -u -r -N a/profiles/input/server.c b/profiles/input/server.c
---- a/profiles/input/server.c	2026-08-13 16:07:53.503798672 -0400
-+++ b/profiles/input/server.c	2026-08-13 16:07:53.602798930 -0400
+--- a/profiles/input/server.c	2025-09-18 14:08:44.000000000 -0400
++++ b/profiles/input/server.c	2026-08-14 10:40:26.529878210 -0400
 @@ -31,6 +31,7 @@
  #include "src/profile.h"
  
@@ -925,8 +924,8 @@ diff -u -r -N a/profiles/input/server.c b/profiles/input/server.c
  		goto drop;
  	}
 diff -u -r -N a/profiles/input/sixaxis.h b/profiles/input/sixaxis.h
---- a/profiles/input/sixaxis.h	2026-08-13 16:07:53.503798672 -0400
-+++ b/profiles/input/sixaxis.h	2026-08-13 16:07:53.602798930 -0400
+--- a/profiles/input/sixaxis.h	2025-09-18 14:08:44.000000000 -0400
++++ b/profiles/input/sixaxis.h	2026-08-14 10:40:26.529878210 -0400
 @@ -13,10 +13,18 @@
  #ifndef _SIXAXIS_H_
  #define _SIXAXIS_H_
@@ -947,8 +946,8 @@ diff -u -r -N a/profiles/input/sixaxis.h b/profiles/input/sixaxis.h
  
  struct cable_pairing {
 diff -u -r -N a/src/adapter.c b/src/adapter.c
---- a/src/adapter.c	2026-08-13 16:07:53.495798651 -0400
-+++ b/src/adapter.c	2026-08-13 16:07:53.602798930 -0400
+--- a/src/adapter.c	2025-09-18 14:08:44.000000000 -0400
++++ b/src/adapter.c	2026-08-14 10:40:26.530878213 -0400
 @@ -3178,18 +3178,23 @@
  
  		break;
@@ -1117,8 +1116,8 @@ diff -u -r -N a/src/adapter.c b/src/adapter.c
  					const void *param, void *user_data)
  {
 diff -u -r -N a/src/adapter.h b/src/adapter.h
---- a/src/adapter.h	2026-08-13 16:07:53.494798648 -0400
-+++ b/src/adapter.h	2026-08-13 16:07:53.603798932 -0400
+--- a/src/adapter.h	2025-09-18 14:08:44.000000000 -0400
++++ b/src/adapter.h	2026-08-14 10:40:26.530878213 -0400
 @@ -77,6 +77,9 @@
  const char *btd_adapter_get_name(struct btd_adapter *adapter);
  void btd_adapter_remove_device(struct btd_adapter *adapter,

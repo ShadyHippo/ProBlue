@@ -233,38 +233,28 @@ controller.
 
 ## 5. Why there is no kernel patch (BlueZ-only)
 
-> **Status (2026-08-13): confirmed — the kernel patch is NOT needed.**
-> The stock-kernel test that earlier revisions of this section called
-> "pending" **passed**: the whole flow — wired pairing, unplug, button press,
-> BT reconnect + input — works on the **stock Ubuntu 6.8.0-137
-> `hid-nintendo`** module with the BlueZ patch alone. ProBlue is a BlueZ-only
-> project; there is no kernel patch to build or install.
+> **Status (2026-08-13): confirmed — no kernel patch is needed.** The whole
+> flow — wired pairing, unplug, button press, BT reconnect + input — works on
+> the **stock Ubuntu 6.8.0-137 `hid-nintendo`** module with the BlueZ patch
+> alone. ProBlue is BlueZ-only: there is no kernel patch to build or install.
 
-**Why a fork was once thought necessary, and why it isn't:**
+**Why not?** The original concern was that the stock driver's USB init sends
+`0x80 04` (USB-only lock) and config subcommands, which could knock the
+controller out of pair mode or fight the wired subcommands. In practice:
 
-- The original concern: the stock driver's USB init sends `0x80 04`
-  (USB-only lock) and config subcommands, which could knock the controller
-  out of pair mode or fight BlueZ's wired subcommands.
-- Reality: the BlueZ patch drives the entire wired flow itself over the
-  plugin's own hidraw fd — `procon_usb_session_init()` re-establishes the
-  USB session (`0x80 02/03/02`) and every subcommand runs over that fd,
-  which the **stock** driver also creates (`HID_CONNECT_HIDRAW`). The stock
-  driver's USB init is runtime-only: it writes no SPI pairing records and is
-  not re-run on radio events, so it does not interfere. The BT side never
-  conflicts either: with BlueZ 5.84 the controller's BT input is served by
-  bluetoothd's HID profile over **uhid**, so the stock `hid-nintendo` driver
-  does not create a competing BT input device in this configuration.
+- The BlueZ patch drives the entire wired flow itself over the plugin's own
+  hidraw fd — `procon_usb_session_init()` re-establishes the USB session
+  (`0x80 02/03/02`) and every subcommand runs over that fd, which the
+  **stock** driver also creates (`HID_CONNECT_HIDRAW`).
+- The stock driver's USB init is runtime-only: it writes no SPI pairing
+  records and is not re-run on radio events, so it does not interfere.
+- The BT side never conflicts either: with BlueZ 5.84 the controller's BT
+  input is served by bluetoothd's HID profile over **uhid**, so the stock
+  `hid-nintendo` driver does not create a competing BT input device.
 
-**What this means in practice:**
-
-- Install **only** the BlueZ patch (§1). The kernel module stays stock:
-  nothing to build, load, or DKMS, and nothing to rebuild on kernel updates.
-- The historical fork (`patches/hid-nintendo-keep-bt-radio.patch`,
-  `src/kernel/hid-nintendo.c`) is kept **only as a record** of this
-  investigation. **Do not install it** — it made the driver fully passive on
-  every transport (no input/LED/rumble/battery device anywhere, no wired USB
-  play, kernel-served BT input gone), removing working features for zero
-  benefit now that the stock path is proven.
+**What this means:** install **only** the BlueZ patch (§1). The kernel
+module stays stock — nothing to build, load, or DKMS, and nothing to
+rebuild on kernel updates.
 
 **Verification:** stock kernel + patched BlueZ 5.84, 2026-08-13: dock (wired
 3-step pairing, link key registered) → unplug → button press → BT connect +
@@ -515,13 +505,10 @@ the A/B traces).
 
 ## 9. Known limitations & open items
 
-- **No kernel patch is used** — ProBlue is BlueZ-only (see §5). The stock
+- **No kernel patch** — ProBlue is BlueZ-only (see §5). The stock
   `hid-nintendo` module keeps its normal behavior: wired USB play works, and
   kernel-served BT input works where the kernel HIDP path is used (systems
-  without uhid). The historical passive fork (kept for reference, §5)
-  *would* disable input/LED/rumble/battery on every transport for every
-  device (Pro Controller, Joy-Con L/R, SFC30, GEN, N64, Charging Grip) —
-  exactly why it was retired.
+  without uhid).
 - **Page scan is kept on (connectable) indefinitely once a cable-paired
   device has been plugged in.** `setup_device()` calls
   `btd_adapter_set_connectable(adapter, true)` and nothing reverts it, and
@@ -554,11 +541,8 @@ the A/B traces).
 
 Upstream status, stated plainly: the BlueZ patch is additive and plausibly
 upstreamable after review. There is no kernel patch — ProBlue is BlueZ-only
-(§5); the historical hid-nintendo fork is not upstreamable as-is (it
-unconditionally disabled the driver's input/LED/rumble/battery on every
-transport for every device, a regression with no opt-out), which is part of
-why it was retired. Everything is GPL-2.0-or-later with BlueZ-style headers
-and attribution.
+(§5). Everything is GPL-2.0-or-later with BlueZ-style headers and
+attribution.
 
 **BlueZ patch — review concerns.** Plausible after discussion; reviewers
 will push on: the global `property_set_mode` change (discoverable-off no
@@ -631,9 +615,9 @@ conclusions they reference are stated in full in §2/§6.
 
 - The `LICENSE` file at the repo root is the GNU GPL **version 2** reference
   text (upstream GPLv2, June 1991).
-- BlueZ patch and the historical kernel fork: **GPL-2.0-or-later** (matches
-  BlueZ; new files carry the BlueZ SPDX header + `Copyright (C) 2026 Tim Van
-  Dyke <tim.vandyke123@gmail.com>`).
+- The BlueZ patch: **GPL-2.0-or-later** (matches BlueZ; new files carry the
+  BlueZ SPDX header + `Copyright (C) 2026 Tim Van Dyke
+  <tim.vandyke123@gmail.com>`).
 - This documentation: **CC-BY-4.0** unless noted otherwise — the canonical
   text is at <https://creativecommons.org/licenses/by/4.0/>.
 

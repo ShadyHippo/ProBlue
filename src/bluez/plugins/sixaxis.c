@@ -374,8 +374,8 @@ static bool setup_device(int fd, const char *sysfs_path,
 	struct btd_device *device;
 	struct authentication_closure *closure;
 
-	/* Wake the BT chip's UART session before ANY subcommand — the passive
-	 * kernel fork sends nothing, so without this no subcmd gets a reply
+	/* Wake the BT chip's UART session before ANY subcommand — we start the
+	 * wired UART session ourselves, so without this no subcmd gets a reply
 	 * (see procon_usb_session_init(), at session start). */
 	if (cp->type == CABLE_PAIRING_PROCON &&
 				procon_usb_session_init(fd) < 0)
