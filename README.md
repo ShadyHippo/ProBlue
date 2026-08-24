@@ -1,7 +1,17 @@
-# ProBlue — Nintendo Switch Pro Controller USB native pairing on Linux
+# ProBlue — Nintendo Switch Pro Controller Switch-parity pairing on Linux
 
-ProBlue is a single patch to **BlueZ** that implements the USB pairing the switch does on Linux.
+> **STATUS (2026-08-24).** Architecture decision: this is a **two-patch**
+> project — the BlueZ patch below PLUS a slim passive-USB kernel patch for
+> `hid-nintendo`. An earlier "BlueZ-only, no kernel patch" claim in this repo
+> was based on pairing-level evidence and is retracted: stock `hid-nintendo`
+> pins the controller to USB (`0x80 04`) and its init collides with the plugin
+> over hidraw. Input over BT has never been validated end-to-end on any
+> configuration; see `PLAN.md` for proven status, evidence anchors, and next
+> steps before trusting anything here about "working".
 
+ProBlue implements the pairing the Switch does on Linux: a **BlueZ patch**
+(wired cable-pairing) plus a small **kernel patch** (keep the BT radio alive
+over USB; wire never carries input).
 ## Table of contents
 
 1. [Quickstart](#1-quickstart)
@@ -328,13 +338,20 @@ forces full mode regardless, so the setup wins either way).
 
 ## 6. Known limitations & open items
 
-- **Wired USB play mode is gone (observed):** when the controller is plugged
-  in, the kernel's `hid-nintendo` driver no longer sets up a USB input device
-  — ProBlue's wired session (USB session init + pairing subcommands over the
-  same hidraw) claims the controller first, so the stock driver never
-  completes its USB input setup. The controller waits for a button press,
-  then connects over Bluetooth; input is always over BT, and USB serves
-  pairing + charging only.
+- **Wired USB carries no input (by design):** with the required kernel patch,
+  the USB-bound `hid-nintendo` instance is passive (bind + hidraw only), so no
+  USB input device exists. With the STOCK module this was merely an observed
+  side effect of the wired session claiming the controller first — and the
+  stock module must not be used anyway (see the kernel-conflict answer in §7).
+  Input is always over BT; USB serves pairing + charging only.
+- **Input over BT has never been validated end-to-end [PROVEN].** Journal
+  forensics (see PLAN.md): calibration reads fail on essentially every session
+  (333 fallbacks / 84 binds across all eras), report streams stall in bursts,
+  and probes intermittently die (-110). The same degradation appears under a
+  pure stock GUI pairing from before this project existed, so it is not caused
+  by these patches — but no configuration has yet delivered reliable input on
+  the test machine. Do not treat the pairing flow working as the product
+  working.
 - **Page scan is kept on (connectable) indefinitely once a cable-paired
   device has been plugged in.** `setup_device()` calls
   `btd_adapter_set_connectable(adapter, true)` and nothing reverts it, and
@@ -369,7 +386,7 @@ forces full mode regardless, so the setup wins either way).
 | Why re-pair on every dock? | The Switch re-pairs at every dock, there is no "read stored central" subcommand, and the controller's single slot can be silently overwritten by another host. Fresh key per dock is the robust model. |
 | Why the hardcoded SDP record? | The stock SDP seed is malformed on 5.84 for this device; the record is captured verbatim from a real pairing. Mirrors the existing `SIXAXIS_HID_SDP_RECORD`. |
 | Why the global page-scan config? | The controller pages only briefly on wake; the stock ~0.9% duty misses it. A per-plugin `set_fast_connectable` dynamic toggle is the planned gentler alternative. |
-| Does the stock kernel driver conflict? | No — over USB it creates the hidraw node the plugin talks to (`HID_CONNECT_HIDRAW`) and its init is runtime-only (writes no SPI pairing records, not re-run on radio events); `procon_usb_session_init()` re-establishes the session regardless. Over BT the controller's input is served by bluetoothd over uhid, so `hid-nintendo` never creates a competing BT input device in this configuration. |
+| Does the stock kernel driver conflict? | **Yes — a kernel patch is required [PROVEN].** Stock USB init sends `0x80 04` (pin-to-USB/no-timeout), which idles the BT radio while docked and breaks button-wake reconnect. Its active init also collides with the plugin over the same hidraw during docks (journal 2026-08-14 23:43: every cal read failed). The kernel patch makes USB binding passive (hidraw only); BT stays stock upstream. |
 
 **Porting to a newer BlueZ:** the changed symbols (`setup_device`,
 `agent_auth_cb`, `input_device_connected`, `property_set_mode`,
