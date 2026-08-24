@@ -1,0 +1,338 @@
+Aug 24 13:32:33 hippo-XPS-15-9570 kernel: veth2b344d3: entered promiscuous mode
+Aug 24 13:32:33 hippo-XPS-15-9570 kernel: eth0: renamed from vethc0ac466
+Aug 24 13:32:33 hippo-XPS-15-9570 kernel: docker0: port 1(veth2b344d3) entered blocking state
+Aug 24 13:32:33 hippo-XPS-15-9570 kernel: docker0: port 1(veth2b344d3) entered forwarding state
+Aug 24 13:32:35 hippo-XPS-15-9570 kernel: docker0: port 1(veth2b344d3) entered disabled state
+Aug 24 13:32:35 hippo-XPS-15-9570 kernel: vethc0ac466: renamed from eth0
+Aug 24 13:32:35 hippo-XPS-15-9570 kernel: docker0: port 1(veth2b344d3) entered disabled state
+Aug 24 13:32:35 hippo-XPS-15-9570 kernel: veth2b344d3 (unregistering): left allmulticast mode
+Aug 24 13:32:35 hippo-XPS-15-9570 kernel: veth2b344d3 (unregistering): left promiscuous mode
+Aug 24 13:32:35 hippo-XPS-15-9570 kernel: docker0: port 1(veth2b344d3) entered disabled state
+Aug 24 13:36:21 hippo-XPS-15-9570 kernel: hid-generic 0005:057E:2009.0003: unknown main item tag 0x0
+Aug 24 13:36:21 hippo-XPS-15-9570 kernel: input: Pro Controller as /devices/virtual/misc/uhid/0005:057E:2009.0003/input/input36
+Aug 24 13:36:21 hippo-XPS-15-9570 kernel: hid-generic 0005:057E:2009.0003: input,hidraw2: BLUETOOTH HID v0.01 Gamepad [Pro Controller] on 50:28:4a:0d:54:7a
+Aug 24 13:36:22 hippo-XPS-15-9570 kernel: hid_nintendo: loading out-of-tree module taints kernel.
+Aug 24 13:36:22 hippo-XPS-15-9570 kernel: hid_nintendo: module verification failed: signature and/or required key missing - tainting kernel
+Aug 24 13:36:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: unknown main item tag 0x0
+Aug 24 13:36:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: hidraw2: BLUETOOTH HID v80.01 Gamepad [Pro Controller] on 50:28:4a:0d:54:7a
+Aug 24 13:36:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: controller MAC = 20:0B:CF:34:F1:BD
+Aug 24 13:36:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: using factory cal for left stick
+Aug 24 13:36:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: using factory cal for right stick
+Aug 24 13:36:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: using factory cal for IMU
+Aug 24 13:36:22 hippo-XPS-15-9570 kernel: input: Pro Controller as /devices/virtual/misc/uhid/0005:057E:2009.0003/input/input37
+Aug 24 13:36:22 hippo-XPS-15-9570 kernel: input: Pro Controller (IMU) as /devices/virtual/misc/uhid/0005:057E:2009.0003/input/input38
+Aug 24 13:36:22 hippo-XPS-15-9570 kernel: Bluetooth: Unexpected start frame (len 52)
+Aug 24 13:36:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: arm: subcmd 0x08 00 failed; ret=-110
+Aug 24 13:36:25 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: arm: player-1 LED failed; ret=-110
+Aug 24 13:36:43 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 5 dropped IMU reports
+Aug 24 13:36:43 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=89 avg_delta=13
+Aug 24 13:37:04 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 5 dropped IMU reports
+Aug 24 13:37:04 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=81 avg_delta=11
+Aug 24 13:37:05 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:37:05 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=63 avg_delta=11
+Aug 24 13:37:05 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:37:05 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:37:05 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:37:05 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:37:05 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:37:05 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:37:06 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:37:06 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:37:08 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:37:08 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=79 avg_delta=14
+Aug 24 13:39:03 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:39:03 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:39:04 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:39:04 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:39:04 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:39:04 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:39:53 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:39:53 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=68 avg_delta=11
+Aug 24 13:39:53 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:39:53 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=63 avg_delta=11
+Aug 24 13:39:54 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:39:54 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:39:54 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:39:54 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:39:54 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:39:54 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=69 avg_delta=11
+Aug 24 13:39:54 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:39:54 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:40:33 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:33 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=62 avg_delta=11
+Aug 24 13:40:33 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:33 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:40:33 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 8 dropped IMU reports
+Aug 24 13:40:33 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=105 avg_delta=11
+Aug 24 13:40:34 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:34 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:40:34 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:34 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:40:34 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:34 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:40:34 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:34 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=64 avg_delta=11
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 8 dropped IMU reports
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=106 avg_delta=11
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:35 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=62 avg_delta=11
+Aug 24 13:40:36 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:36 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:40:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:40:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:40:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=62 avg_delta=11
+Aug 24 13:40:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=64 avg_delta=11
+Aug 24 13:40:38 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:38 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:40:38 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:38 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:40:38 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:38 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=63 avg_delta=11
+Aug 24 13:40:38 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:38 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:40:38 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:40:38 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:02 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:02 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=67 avg_delta=11
+Aug 24 13:41:03 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:03 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:03 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:03 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:11 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:11 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:41:11 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:11 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:41:12 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:12 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:12 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:12 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 5 dropped IMU reports
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=77 avg_delta=11
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=62 avg_delta=11
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 6 dropped IMU reports
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=89 avg_delta=11
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:24 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=63 avg_delta=11
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:26 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=63 avg_delta=11
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:27 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:41:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:41:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:41:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:41:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=62 avg_delta=11
+Aug 24 13:41:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=65 avg_delta=11
+Aug 24 13:41:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:41:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:41:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:42:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:37 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=62 avg_delta=11
+Aug 24 13:42:44 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:44 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:44 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:44 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:44 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:44 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:42:44 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:44 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=62 avg_delta=11
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=63 avg_delta=11
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=62 avg_delta=11
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:45 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:46 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:46 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:46 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:46 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:42:46 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 7 dropped IMU reports
+Aug 24 13:42:46 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=102 avg_delta=11
+Aug 24 13:42:46 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:46 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:42:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=65 avg_delta=11
+Aug 24 13:42:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=64 avg_delta=11
+Aug 24 13:42:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:42:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=63 avg_delta=11
+Aug 24 13:42:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=66 avg_delta=11
+Aug 24 13:42:49 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:49 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:42:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:42:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=64 avg_delta=11
+Aug 24 13:42:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:50 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:42:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=64 avg_delta=11
+Aug 24 13:42:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=66 avg_delta=11
+Aug 24 13:42:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=68 avg_delta=11
+Aug 24 13:42:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:51 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:52 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:52 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:52 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:42:52 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:42:59 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 5 dropped IMU reports
+Aug 24 13:42:59 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=124 avg_delta=17
+Aug 24 13:43:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:43:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:43:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:43:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:43:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:43:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:43:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:43:22 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:43:23 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:43:23 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:43:23 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:43:23 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:43:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 5 dropped IMU reports
+Aug 24 13:43:47 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=77 avg_delta=11
+Aug 24 13:43:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:43:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:43:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:43:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:43:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:43:48 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:43:49 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:43:49 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:44:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=63 avg_delta=11
+Aug 24 13:44:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=63 avg_delta=11
+Aug 24 13:44:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:44:30 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:30 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:44:30 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:30 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=68 avg_delta=11
+Aug 24 13:44:30 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:30 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:44:32 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 5 dropped IMU reports
+Aug 24 13:44:32 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=78 avg_delta=11
+Aug 24 13:44:32 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:32 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:44:32 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:32 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:44:32 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:32 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:44:33 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:33 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=68 avg_delta=11
+Aug 24 13:44:40 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:40 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:44:40 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:40 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:44:41 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:41 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:44:41 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:44:41 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:45:00 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:45:00 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:45:00 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:45:00 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:45:00 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:45:00 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:45:00 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:45:00 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:45:00 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:45:00 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:45:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:45:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=61 avg_delta=11
+Aug 24 13:45:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:45:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:45:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:45:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11
+Aug 24 13:45:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: compensating for 4 dropped IMU reports
+Aug 24 13:45:29 hippo-XPS-15-9570 kernel: nintendo 0005:057E:2009.0003: delta=60 avg_delta=11

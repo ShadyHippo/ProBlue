@@ -58,56 +58,40 @@ encryption → PSM 17/19 up. Verified repeatedly across all configurations
 (e.g. journal 2026-08-15 23:51, 2026-08-16 15:25 & 16:28: complete dock
 sequence every time).
 
-### Layer 2: input over BT — NEVER PROVEN in any configuration
-The pipeline CAN assemble (kernel driver bound over uhid reached READ state
-and streamed 0x30 reports — IMU-compensation lines exist in every era,
-including ~20 min continuous on 2026-08-16 16:21–16:43 under the current
-binaries). But it has never been clean or reliable:
+### Layer 2: input over BT — CLEAN ON A VIRGIN STACK [PROVEN 2026-08-24]
+Control test executed per step 1 below (full evidence + raw logs:
+`docs/virgin-stack-control-test.md`). True-pristine configuration — stock
+in-tree `hid-nintendo`, stock bluetoothd, joycond disabled, fresh OTA pairing:
 
-- Calibration reads fail on essentially EVERY session (333 `using factory
-  cal` fallbacks across 84 BT binds, 2026-08-10→16). Healthy links show zero.
-- Multi-second report stalls with burst catch-up (`delta=1589ms`,
-  avg_delta 15→25 ms), rate-limiter starvation.
-- Sporadic probe deaths (`probe of 0005:057E:2009 failed with error -110`).
-- Session churn without a fast life-signal (controller drops un-fed sessions;
-  historical estimates range 150 ms–2.2 s).
+- avg IMU report delta 11 ms; gamepad evdev stream continuous at ~7–15 ms
+cadence with no perceptible stalls over the recorded play session.
+- Zero `timeout waiting`, zero probe failures/`-110`, stable session.
+- **Platform exonerated:** Intel adapter, stock driver behavior, page-scan
+and link-key type are not causes of the historical degradation. That
+degradation is attributed to project-era concurrent hidraw writers (Phase 0
+hand-driving 07-29..31, pairing experiments 08-12..14, patched-daemon queue
+vs driver init collisions) — see the journal forensics summary in the
+control-test doc.
 
-**Critical baseline fact [PROVEN]:** the degradation predates ALL project code.
-2026-08-09/10 — pure stock GUI pairing, no patched daemon, fork-era modules
-loaded but BT binds still showed 93 factory-cal failures across 19 binds.
-No truly pristine (zero custom modules) baseline has ever been measured on
-this machine.
-
-Ruled out as causes [PROVEN]: adapter hostname quirk (alias already
-"Nintendo Switch", verified live), link-key type (golden GUI capture also
-stores Type=4), PageScan tuning (live in main.conf, correct), which daemon
-variant runs (degradation identical across all three).
-
-Prime suspects for layer 2 (unranked, untested): Intel combo-card BR/EDR
-behavior with this controller (sniff interval / EDR policy);
-`hid-nintendo`'s rate limiter vs this adapter's report-cadence jitter;
-uhid/GLib forwarding latency. Decisive cheap test: a different BT adapter
-(USB dongle) or another Linux machine.
+Two persistent quirks [PROVEN], folded into all future testing:
+1. **Factory-cal fallback ×3 on every connect** — inherent controller/host
+quirk; fires even with one writer and zero project code. Cosmetic only;
+sticks center fine, input unaffected.
+2. **Early-session subcommand dead window** — subcommands sent in the first
+~2 s after BT connect time out (`ret=-110`; fork arm at T+2 s failed live).
+Consequence: the BlueZ setup queue must NOT fire instantly on connect —
+it needs an initial delay (~2–3 s) or retry-on-timeout, else each queued
+step burns its 500 ms cap. Fold into `patches/bluez-5.84-procon.patch`
+before final acceptance runs.
+3. IMU micro-gaps (60–130 ms, "compensating for N dropped IMU reports") every
+few seconds — gamepad substream unaffected; do not misread as regression.
 
 ## Next steps (ordered)
 
-1. **Virgin-stack control test** (~20 min, no code). Goal: measure whether a
-   truly pristine stack produces clean BT input on this machine — it has never
-   been measured; every prior "baseline" had project modules loaded.
-   ```bash
-   sudo systemctl disable --now joycond        # kill duplicate input consumer
-   sudo rm /lib/modules/$(uname -r)/updates/hid-nintendo.ko && sudo depmod -a
-   # OPTIONAL full-virgin Bluetooth baseline (patched daemon barely touches
-   # GUI pairing, but stock removes all doubt):
-   #   sudo rm /etc/systemd/system/bluetooth.service.d/ProBlue.conf
-   #   sudo systemctl daemon-reload && sudo systemctl restart bluetooth
-   # reboot → bluetoothctl remove 20:0B:CF:34:F1:BD → GUI-pair OTA →
-   # press buttons under `evtest`, watch:
-   journalctl -kf | grep -E 'factory cal|delta=|timeout waiting|input report'
-   ```
-   - Still degraded → platform problem; test a USB BT dongle / another
-     machine before touching either patch again.
-   - Clean → cable-path-specific; isolate from here.
+1. ~~Virgin-stack control test~~ **DONE 2026-08-24 — clean.** Layer 2 PROVEN
+   on a virgin stack; platform exonerated. Evidence:
+   `docs/virgin-stack-control-test.md` (+ raw logs alongside it).
+   Side discovery driving design: the subcommand dead window (Layer 2 §2).
 2. Assemble target stack in this repo:
    - BlueZ side = committed `patches/bluez-5.84-procon.patch` (queue present
      at HEAD; working-tree strip reverted 2026-08-24).
@@ -121,7 +105,8 @@ uhid/GLib forwarding latency. Decisive cheap test: a different BT adapter
      `tools/install.sh`.
 3. Acceptance tests (input-level, written down so testing can't lie):
    - evtest streams events within ~2 s of button-wake.
-   - Zero `using factory cal` lines during init.
+   - Init errors limited to the known-benign factory-cal fallback (≤3 lines);
+     zero other init failures (no `-110`, no `timeout waiting`).
    - Zero report stalls >100 ms over a ≥10 min session.
    - ≥10 consecutive dock→unplug→button→input cycles without manual recovery.
    - While docked: button press connects (mash-to-connect) and USB carries
@@ -143,8 +128,12 @@ From Project_History (joycond repo) plus this repo's findings:
 - Arm inside kernel probe (timing-falsified 2026-08-16).
 - Kernel fork passive on ALL transports (committed joycond version):
   structurally cannot produce BT input — no evdev is ever created.
-- Blaming/swapping daemon variants for input quality (fault predates all
-  three variants; see baseline fact above).
+- Blaming/swapping daemon variants for input quality (superseded by the
+  2026-08-24 control test).
+- Blaming the Intel combo card / platform for input quality (exonerated by
+  the virgin-stack control test, 2026-08-24).
+- Requiring zero `using factory cal` as an init gate (impossible on this
+  machine/controller pair; benign quirk — see control-test doc Note A).
 
 ## Maintenance & porting policy (LLM-friendly)
 
