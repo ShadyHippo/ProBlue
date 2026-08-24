@@ -91,19 +91,34 @@ uhid/GLib forwarding latency. Decisive cheap test: a different BT adapter
 
 ## Next steps (ordered)
 
-1. **Virgin-stack control test** (~15 min, no code): uninstall
-   `/lib/modules/$(uname -r)/updates/hid-nintendo.ko` (+ depmod), reboot,
-   forget controller, stock GUI pair, `evtest` the nintendo-created node,
-   `journalctl -kf | grep -E 'factory cal|delta=|timeout waiting'`.
-   - Still degraded → platform problem; test a USB BT dongle / other machine
-     before touching either patch again.
+1. **Virgin-stack control test** (~20 min, no code). Goal: measure whether a
+   truly pristine stack produces clean BT input on this machine — it has never
+   been measured; every prior "baseline" had project modules loaded.
+   ```bash
+   sudo systemctl disable --now joycond        # kill duplicate input consumer
+   sudo rm /lib/modules/$(uname -r)/updates/hid-nintendo.ko && sudo depmod -a
+   # OPTIONAL full-virgin Bluetooth baseline (patched daemon barely touches
+   # GUI pairing, but stock removes all doubt):
+   #   sudo rm /etc/systemd/system/bluetooth.service.d/ProBlue.conf
+   #   sudo systemctl daemon-reload && sudo systemctl restart bluetooth
+   # reboot → bluetoothctl remove 20:0B:CF:34:F1:BD → GUI-pair OTA →
+   # press buttons under `evtest`, watch:
+   journalctl -kf | grep -E 'factory cal|delta=|timeout waiting|input report'
+   ```
+   - Still degraded → platform problem; test a USB BT dongle / another
+     machine before touching either patch again.
    - Clean → cable-path-specific; isolate from here.
 2. Assemble target stack in this repo:
    - BlueZ side = committed `patches/bluez-5.84-procon.patch` (queue present
      at HEAD; working-tree strip reverted 2026-08-24).
-   - Kernel side = port slim passive-USB-only patch from joycond repo git
-     history (commit-era keep-bt-radio.patch MINUS the BT-passive hunk MINUS
-     `joycon_procon_arm`). Target file lives at `patches/hid-nintendo-*-usb-passive.patch`.
+   - Kernel side = port slim passive-USB-only patch from joycond repo commit
+     `b20a9fd` (`driver/hid/hid-nintendo.c` + `keep-bt-radio.patch`): keep the
+     USB hunks; DROP the `BUS_BLUETOOTH` term from `joycon_is_passive()` (BT
+     stays stock) and DROP `joycon_procon_arm()` entirely. Pristine base:
+     joycond `reference_docs/pristine_kernel_reference.md`
+     (+ `dev_tools/get_pristine_hid_nintendo.sh`). Land here as
+     `patches/hid-nintendo-<kver>-usb-passive.patch`; install steps join
+     `tools/install.sh`.
 3. Acceptance tests (input-level, written down so testing can't lie):
    - evtest streams events within ~2 s of button-wake.
    - Zero `using factory cal` lines during init.
@@ -142,7 +157,51 @@ From Project_History (joycond repo) plus this repo's findings:
   `nintendo_hid_probe`, `joycon_init`.
 - Porting procedure stays: fetch pristine source of target version, apply
   patch, resolve conflicts against anchors, rebuild, run acceptance tests.
-- Working agreements carried over: user commits only (agents never commit);
-  never unload/unbind drivers at runtime in the shipped design; logs go to
-  a gitignored results dir; frozen root tooling in the joycond repo remains
-  valid for diagnostics on this machine.
+- Working agreements: local commits are fine (personal vibe-coded repo);
+  never push or force-push without being asked. Never unload/unbind drivers
+  at runtime in the shipped design. Logs go to a gitignored results dir.
+
+## Appendix A — machine & ops context (no other repo needs opening)
+
+### The joycond directory is an ARCHIVE — never delete it
+`~/Programming/slop/joycond` holds (a) root-owned, sha256-pinned diagnostic
+tools wired into `/etc/sudoers.d/joycond-tools` — moving/deleting them breaks
+the pins by design — and (b) gitignored vendored reference repos. All
+development happens in ProBlue only.
+
+### Frozen diagnostics (exact paths, exact args)
+| command | use |
+|---|---|
+| `sudo ~/Programming/slop/joycond/dev_tools/btmon_ctl.sh start\|stop` | HCI capture → `dev_tools/results/btmon.log` |
+| `sudo ~/Programming/slop/joycond/dev_tools/btstate.sh` | radio/controller snapshot |
+| `sudo ~/Programming/slop/joycond/dev_tools/fix_bad_bluetooth.sh` | reboot-equivalent clean state (Already-Paired 0x13 loops, pre-test reset) |
+| `sudo ~/Programming/slop/joycond/dev_tools/SPI_DUMP.py` | controller flash pairing records |
+| `sudo ~/Programming/slop/joycond/dev_tools/joycond_ctl.sh stop\|start` | joycond daemon control |
+
+Editing any frozen tool breaks its digest pin (intended tripwire; a human must
+re-run `dev_tools/not_for_bots/grant_root_access.sh`).
+
+### Gotchas that cost hours (distilled from the archive's Project_History)
+- `bluetooth.service` is D-Bus-activatable: testing a self-built bluetoothd
+  requires `systemctl mask` → foreground `-n -f` run → Ctrl-C → unmask.
+- `btmgmt` can hang forever while bluetoothd runs — always wrap in `timeout`.
+- Storage naming is COLONS ONLY: `/var/lib/bluetooth/<host>/<ctlr>/info`.
+- Kernel link-key state clears only via reboot / btusb reload, never daemon
+  restarts (`fix_bad_bluetooth.sh` is the tool).
+- `insmod` does not resolve deps — use `modprobe` (fork needs `ff_memless`).
+
+### Reference material (read-only, lives in the archive)
+- Protocol RE: `~/Programming/slop/joycond/reference_docs/Nintendo_Switch_Reverse_Engineering/`
+  (`bluetooth_hid_subcommands_notes.md`, `USB-HID-Notes.md`,
+  `spi_flash_notes.md`, `packet_parse/c2j.txt`)
+- BlueZ source: `~/Programming/slop/joycond/reference_docs/bluez/`
+- Pristine kernel driver + verification procedure:
+  `~/Programming/slop/joycond/reference_docs/{hid-nintendo.c,hid-ids.h}` and
+  `pristine_kernel_reference.md`
+- Complete dead-end history: `~/Programming/slop/joycond/reference_docs/Project_History.md`
+  (its banner explains what to distrust)
+
+### Fresh-session bootstrap
+Read this file top to bottom. Open `docs/maki_memories.md` §5 (protocol) when
+touching protocol code. Nothing else is required — everything else is archived
+context or raw evidence.
