@@ -91,6 +91,23 @@ elif [ -n "$KMOD" ]; then
   say "controller currently bound — REBOOT to activate the new module"
 fi
 
+# --- 3c. stale joycond udev rules ------------------------------------------------
+# joycond's rules force the Pro Controller input node to MODE=0600 (its daemon
+# grabs the device exclusively). With joycond gone they just break desktop
+# access — evtest/games can't open the pad without sudo.
+RULES_CHANGED=0
+for f in /usr/lib/udev/rules.d/72-joycond.rules /usr/lib/udev/rules.d/89-joycond.rules; do
+  if [ -e "$f" ]; then
+    sudo rm -f "$f"
+    say "removed stale $f"
+    RULES_CHANGED=1
+  fi
+done
+if [ "$RULES_CHANGED" = 1 ]; then
+  sudo udevadm control --reload-rules
+  say "udev rules reloaded — reconnect controller once to refresh permissions"
+fi
+
 # --- 4. systemd drop-in (distro updates can't clobber ExecStart) ----------------
 DROPDIR=/etc/systemd/system/bluetooth.service.d
 sudo mkdir -p "$DROPDIR"

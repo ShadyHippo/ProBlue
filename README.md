@@ -5,10 +5,11 @@
 > `hid-nintendo`. An earlier "BlueZ-only, no kernel patch" claim in this repo
 > was based on pairing-level evidence and is retracted: stock `hid-nintendo`
 > pins the controller to USB (`0x80 04`) and its init collides with the plugin
-> over hidraw. Input over BT is now **proven clean on a pristine stack**
-> (2026-08-24 control test — `docs/virgin-stack-control-test.md`); what remains
-> is assembling the two patches and passing the end-to-end acceptance tests.
-> See `PLAN.md` for proven status, evidence anchors, and next steps.
+> over hidraw. As of 2026-08-24 evening the full two-patch stack is
+> **assembled, installed and working** (magic pairing, wake-reconnect, BT
+> input in real applications). Remaining: formal acceptance tallies and this
+> README's quickstart rewrite (kernel-module build + udev cleanup).
+> **`PLAN.md` is the source of truth — where README and PLAN disagree, PLAN wins.**
 
 ProBlue implements the pairing the Switch does on Linux: a **BlueZ patch**
 (wired cable-pairing) plus a small **kernel patch** (keep the BT radio alive

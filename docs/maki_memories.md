@@ -140,6 +140,12 @@ kills the BT radio while docked) · `0x05` enable timeout.
 
 ## 6. Reconnect root cause & the serialized-setup fix [PROVEN — pairing level]
 
+> **Update 2026-08-24:** the 4-step queue described below is SUPERSEDED —
+> probe/report-mode/LED steps belong to stock hid-nintendo's own init; BlueZ
+> now sends ONLY the arm (`0x08 00`), delayed to T+1s with retries (PLAN.md
+> Architecture). The watchdog analysis and ack-wait discipline below remain
+> valid history and motivated the original design.
+
 ### The controller's connect/drop cycle
 `btmon` 2026-08-13 (run 2): the controller cycles **connect → ~2.2 s → drop
 (0x08 link timeout) → re-page**, continuously. In that run 8/9 sessions never
