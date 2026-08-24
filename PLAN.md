@@ -31,15 +31,24 @@ else in this repo or in the archived `~/Programming/slop/joycond` repo.
 | | Kernel patch (`hid-nintendo`) | BlueZ patch (this repo) |
 |---|---|---|
 | USB transport | Passive probe: bind + expose hidraw ONLY. No `0x80 02/03/02`, no `0x80 04` (no-timeout/pin-to-USB), no config subcmds, no USB input/leds/battery. | Owns the wired session over that hidraw: init, arm (`0x08 00`), 3-step pairing, LTK storage, hardcoded SDP record, `-ENOENT` deferral. |
-| BT transport | **100% stock upstream driver.** Full init, parses 0x30 reports → real `/dev/input`, LEDs/rumble/battery. Untouched by the patch. | Serialized post-connect setup queue over PSM 19 on EVERY connection: `0x02 probe → 0x08 00 arm → 0x03 30 full mode → 0x30 01 LED`, ack-waited, 500 ms cap per subcmd. Sole owner of BT-side subcommands. |
+| BT transport | **100% stock upstream driver.** Full init, parses 0x30 reports → real `/dev/input`, LEDs/rumble/battery. Untouched by the patch. The kernel sends **no** arm — stock never uses subcmd 0x08 (verified against pristine source). | Serialized per-connect queue over PSM 19 on EVERY connection, Pro Controllers only: **one subcommand — `0x08 00` arm**, first attempt T+1s, retry ×3 (500ms ack cap each). Sole owner of deliberate BT-side subcommands. |
 
-**Single-owner rule:** exactly one component ever sends BT subcommands (the
-BlueZ queue). The kernel sends BT subcommands only as its stock, unmodified
-self during its own init. The arm does NOT move into the kernel — a kernel
-probe arm fires seconds after connect (behind module autoload + calibration
-init); the queue fires within milliseconds. Kernel-probe arm placement was
-falsified live on 2026-08-16 16:26 (`arm: subcmd 0x08 00 failed; ret=-110`
-into an already-dead session).
+**Single-owner rule:** exactly one component ever sends deliberate BT
+subcommands (the BlueZ arm queue). The kernel sends BT subcommands only as
+its stock, unmodified self during its own init — which covers report mode,
+calibration, IMU/rumble and player LEDs on its own (proven by the virgin
+control test reaching full 0x30 mode with zero BlueZ writes).
+
+**Arm is required for wake [PROVEN 2026-08-24]:** with no arm ever sent, a
+slept controller never wake-reconnects on button press (user test, virgin
+stack); re-pairing revives it. `0x08 00` clears shipment low-power state
+(SPI x5000), re-enabling Broadcom Fast Connect scan-on-button-press; the
+Switch sends it after every connection too (RE doc). Timing constraint:
+early connect-time subcmds hit a dead window (~300 ms+; factory-cal reads
+time out every session) while an unfed wake session dies within ~2 s — so
+first attempt at T+1s, retries to ~T+2.5s. Dock-time wired arm
+(`procon_arm_wired`) additionally guarantees the flag across undocks.
+Docked LED feedback: none (Switch parity decision, 2026-08-24).
 
 **Why the kernel patch is mandatory [PROVEN]:**
 - Stock USB init sends `0x80 04` (pin-to-USB/no-timeout): BT radio idles while
@@ -92,17 +101,17 @@ few seconds — gamepad substream unaffected; do not misread as regression.
    on a virgin stack; platform exonerated. Evidence:
    `docs/virgin-stack-control-test.md` (+ raw logs alongside it).
    Side discovery driving design: the subcommand dead window (Layer 2 §2).
-2. Assemble target stack in this repo:
-   - BlueZ side = committed `patches/bluez-5.84-procon.patch` (queue present
-     at HEAD; working-tree strip reverted 2026-08-24).
-   - Kernel side = port slim passive-USB-only patch from joycond repo commit
-     `b20a9fd` (`driver/hid/hid-nintendo.c` + `keep-bt-radio.patch`): keep the
-     USB hunks; DROP the `BUS_BLUETOOTH` term from `joycon_is_passive()` (BT
-     stays stock) and DROP `joycon_procon_arm()` entirely. Pristine base:
-     joycond `reference_docs/pristine_kernel_reference.md`
-     (+ `dev_tools/get_pristine_hid_nintendo.sh`). Land here as
-     `patches/hid-nintendo-<kver>-usb-passive.patch`; install steps join
-     `tools/install.sh`.
+2. Assemble target stack in this repo — **patch files DONE & build-tested
+   2026-08-24**:
+   - BlueZ side = amended `patches/bluez-5.84-procon.patch`: queue shrunk to
+     gated single delayed arm; applies clean to pristine 5.84 tarball;
+     bluetoothd builds (52 procon strings).
+   - Kernel side = `patches/hid-nintendo-6.8.0-137-generic-usb-passive.patch`
+     ported from joycond b20a9fd minus `joycon_procon_arm()`; applies clean;
+     module builds (srcversion B126DE5C5AC7E0F799C78D5);
+     `tools/install.sh` now removes stale updates/ modules and installs an
+     optional built `.ko`.
+   - REMAINING: install both on the machine + run step-3 acceptance tests.
 3. Acceptance tests (input-level, written down so testing can't lie):
    - evtest streams events within ~2 s of button-wake.
    - Init errors limited to the known-benign factory-cal fallback (≤3 lines);

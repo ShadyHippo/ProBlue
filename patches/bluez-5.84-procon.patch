@@ -235,7 +235,7 @@ diff -u -r -N a/profiles/input/device.c b/profiles/input/device.c
  
  #define INPUT_INTERFACE "org.bluez.Input1"
  
-@@ -87,6 +88,10 @@
+@@ -87,6 +88,11 @@
  	bool			virtual_cable_unplug;
  	uint8_t			type;
  	unsigned int		idle_timer;
@@ -243,6 +243,7 @@ diff -u -r -N a/profiles/input/device.c b/profiles/input/device.c
 +	int			procon_setup_pos;
 +	guint			procon_setup_source;
 +	uint8_t			procon_setup_last;
++	uint8_t			procon_arm_tries;
  };
  
  static int idle_timeout = 0;
@@ -275,7 +276,7 @@ diff -u -r -N a/profiles/input/device.c b/profiles/input/device.c
  	uhid_send_input_report(idev, data + 1, len - 1);
  
  	return true;
-@@ -1230,20 +1243,37 @@
+@@ -1230,20 +1243,34 @@
  		device_set_refresh_discovery(idev->device, false);
  }
  
@@ -294,16 +295,13 @@ diff -u -r -N a/profiles/input/device.c b/profiles/input/device.c
  	input_device_update_rec(idev);
  
 +	/* Per-connection arm (the Switch's bt_pairer.cpp:1427 behavior, RE doc
-+	 * "Switch always sends x08 00 after every connection"). Sent BEFORE
-+	 * hidp_add_connection: the armed controller sticks on the FIRST
-+	 * connection attempt, while an un-armed one does its
-+	 * connect-and-self-terminate dance (btmon 2026-08-10: Remote User
-+	 * Terminated 0x13 ~150 ms after PSM 19 when no arm arrived) and can
-+	 * give up entirely. Every connect path funnels through here — inbound
-+	 * (input_device_connadd) and outbound/auto-reconnect
++	 * "Switch always sends x08 00 after every connection") WITHOUT it a
++	 * slept controller never wake-reconnects at all [PROVEN on the virgin
++	 * stack 2026-08-24]. Delayed + gated inside procon_setup_start: only
++	 * Pro Controllers, T+4s, retried. Every connect path funnels through
++	 * here — inbound (input_device_connadd) and outbound/auto-reconnect
 +	 * (interrupt_connect_cb) — so the reconnect-keeper goes out on EVERY
 +	 * connection, not just the first. */
-+	info("procon: connection established, running setup");
 +	procon_setup_start(idev);
 +
  	err = hidp_add_connection(idev);
@@ -314,21 +312,35 @@ diff -u -r -N a/profiles/input/device.c b/profiles/input/device.c
  	btd_service_connecting_complete(idev->service, 0);
  
  	return 0;
-@@ -1595,6 +1625,127 @@
+@@ -1595,6 +1625,168 @@
  	input_device_free(idev);
  }
  
-+/* The Switch's post-connection setup for the Pro Controller, run over the
-+ * BT interrupt channel on EVERY connection, one subcommand at a time — the
-+ * same order stock hid-nintendo uses on BT (device-info probe first, then
-+ * the config subcommands) and the same send-wait-for-ack discipline
-+ * (joycon_hid_send_sync). Firing them back-to-back is lossy: of
-+ * [0x08 00, 0x03 30, 0x30 01] sent in <1ms only the 0x08 was ever acked
-+ * (btmon 2026-08-13) and the controller stayed in simple 0x3F mode,
-+ * cycling connect->drop->re-page. Each subcmd waits for its 0x21 ack
-+ * (500ms cap) before the next goes out. Report framing over BT is the same
-+ * output report 0x01 as USB: [0]=0x01, [1]=counter, [2..9]=rumble(0),
-+ * [10]=subcmd, [11]=data. */
++/* Per-connection arm for the Pro Controller — the ONLY thing this daemon
++ * sends over the BT interrupt channel. Everything else on BT (device-info,
++ * SPI cal reads, report mode 0x30, IMU/rumble enables, player LEDs) belongs
++ * to stock hid-nintendo's own init, which provably reaches full mode with
++ * zero BlueZ writes (virgin-stack control test, docs/virgin-stack-control-
++ * test.md). Sending those here duplicated stock init from a second writer
++ * and collided with it (reply cross-delivery on shared subcmd ids).
++ *
++ * The arm itself (subcmd 0x08 00, clear shipment low-power state, SPI x5000)
++ * is Switch parity: "Switch always sends x08 00 after every connection"
++ * (RE doc) so Broadcom Fast Connect scan-on-button-press stays enabled and
++ * the controller wake-pages us after sleep [PROVEN: armless wake fails on a
++ * clean stack, 2026-08-24].
++ *
++ * Timing: the first ~300 ms after connect are a dead window (early subcmds
++ * time out — factory-cal reads hit it every connect), while an unfed wake
++ * session can die within ~2 s (btmon 2026-08-13). So the first attempt goes
++ * at T+1s and retries every second, three tries total. Ack-wait discipline
++ * (500 ms cap) per attempt; giving up is best-effort-safe because the flag
++ * persists in controller SPI flash and the wired session re-arms at dock.
++ * Report framing over BT: output report 0x01 = [0]=0x01, [1]=counter,
++ * [2..9]=rumble(0), [10]=subcmd, [11]=data. */
++#define PROCON_ARM_DELAY_SEC	1
++#define PROCON_ARM_MAX_TRIES	3
++
 +struct procon_cmd {
 +	uint8_t subcmd;
 +	uint8_t len;
@@ -336,21 +348,28 @@ diff -u -r -N a/profiles/input/device.c b/profiles/input/device.c
 +};
 +
 +static const struct procon_cmd procon_setup_seq[] = {
-+	{ PROCON_SUBCMD_REQ_DEV_INFO, 0, 0x00 },	/* probe first */
 +	{ PROCON_ARM_CLEAR_SHIPMENT, 1, PROCON_ARM_CLEAR_SHIPMENT_DATA },
-+	{ PROCON_SUBCMD_SET_REPORT_MODE, 1, PROCON_REPORT_MODE_FULL },
-+	{ PROCON_ARM_PLAYER1_LED, 1, PROCON_ARM_PLAYER1_LED_DATA },
 +};
 +
 +static void procon_setup_next(struct input_device *idev);
++static void procon_setup_send(struct input_device *idev);
 +
 +static gboolean procon_setup_timeout(gpointer user_data)
 +{
 +	struct input_device *idev = user_data;
 +
 +	idev->procon_setup_source = 0;
-+	info("procon: no ack for 0x%02x, continuing", idev->procon_setup_last);
-+	procon_setup_next(idev);
++
++	if (++idev->procon_arm_tries >= PROCON_ARM_MAX_TRIES) {
++		info("procon: arm 0x08 00 unacked after %d tries; giving up "
++			"(best-effort)", idev->procon_arm_tries);
++		idev->procon_setup_pos = -1;
++		return FALSE;
++	}
++
++	info("procon: no ack for arm (try %d/%d), retrying",
++				idev->procon_arm_tries + 1, PROCON_ARM_MAX_TRIES);
++	procon_setup_send(idev);
 +
 +	return FALSE;
 +}
@@ -407,15 +426,35 @@ diff -u -r -N a/profiles/input/device.c b/profiles/input/device.c
 +	procon_setup_send(idev);
 +}
 +
++/* Delayed fire: keep the arm clear of both the connect-time dead window and
++ * stock driver init (see block comment above). */
++static gboolean procon_setup_delay_expired(gpointer user_data)
++{
++	struct input_device *idev = user_data;
++
++	idev->procon_setup_source = 0;
++	procon_setup_send(idev);
++
++	return FALSE;
++}
++
 +static void procon_setup_start(struct input_device *idev)
 +{
++	if (btd_device_get_vendor(idev->device) != 0x057e ||
++			btd_device_get_product(idev->device) != 0x2009)
++		return;
++
 +	if (idev->procon_setup_source > 0) {
 +		g_source_remove(idev->procon_setup_source);
 +		idev->procon_setup_source = 0;
 +	}
 +
++	info("procon: connection established, arming in %ds",
++				PROCON_ARM_DELAY_SEC);
 +	idev->procon_setup_pos = 0;
-+	procon_setup_send(idev);
++	idev->procon_arm_tries = 0;
++	idev->procon_setup_source = g_timeout_add_seconds(PROCON_ARM_DELAY_SEC,
++					procon_setup_delay_expired, idev);
 +}
 +
 +/* Called from hidp_recv_intr_data when a 0x21 subcmd reply arrives:

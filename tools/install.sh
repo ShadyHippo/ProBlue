@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# install.sh [builddir] — one-shot PERMANENT install of the patched BlueZ daemon
-# (README §1, steps 4-5): `make install` + systemd drop-in + page-scan config.
+# install.sh [builddir] [hid-nintendo.ko] — one-shot PERMANENT install of the
+# patched BlueZ daemon (README §1, steps 4-5): `make install` + systemd
+# drop-in + page-scan config, plus the optional passive-USB kernel module.
 #
-#   bash tools/install.sh ~/ProBlue-build
+#   bash tools/install.sh ~/ProBlue-build [/path/to/hid-nintendo.ko]
 #
+# The .ko is built from patches/hid-nintendo-*-usb-passive.patch against the
+# running kernel's headers (see README §1). Omit it to stay on the stock
+# in-tree module (valid for BT-only testing).
 # Idempotent: safe to re-run. Run as your normal user (sudo is invoked as
 # needed). Undoes the "manual run" hack (a masked bluetooth.service) if present.
 # Exits non-zero with a message on ANY failure.
@@ -56,6 +60,35 @@ if [ -L /etc/systemd/system/bluetooth.service ]; then
   else
     die "/etc/systemd/system/bluetooth.service exists but is not a /dev/null mask — remove it manually first"
   fi
+fi
+
+# --- 3b. kernel module (passive-USB hid-nintendo) ------------------------------
+# A stale custom module under updates/ shadows the in-tree one at every bind,
+# which once faked a "virgin stack" — always clear it first.
+KMOD="${2:-}"
+KVER="$(uname -r)"
+UPDATES="/lib/modules/$KVER/updates"
+sudo rm -f "$UPDATES/hid-nintendo.ko" && sudo rm -f "$UPDATES/hid-nintendo.ko.zst"
+
+if [ -n "$KMOD" ]; then
+  [ -f "$KMOD" ] || die "kernel module not found: $KMOD"
+  VMOD=$(modinfo "$KMOD" | awk '/^vermagic:/ {print $2}')
+  [ "$VMOD" = "$KVER" ] || die "module vermagic '$VMOD' != running kernel '$KVER'"
+  sudo mkdir -p "$UPDATES"
+  sudo install -m 0644 "$KMOD" "$UPDATES/hid-nintendo.ko"
+  say "passive module installed -> $UPDATES/hid-nintendo.ko"
+else
+  say "no kmod argument — stock in-tree hid-nintendo stays active"
+fi
+sudo depmod -a
+
+# Reload only when nothing is bound; a connected controller pins the module.
+if [ -z "$(ls /sys/bus/hid/drivers/nintendo 2>/dev/null)" ]; then
+  sudo modprobe -r hid_nintendo 2>/dev/null || true
+  sudo modprobe hid_nintendo 2>/dev/null || true
+  say "hid_nintendo reloaded ($(modinfo -n hid_nintendo))"
+elif [ -n "$KMOD" ]; then
+  say "controller currently bound — REBOOT to activate the new module"
 fi
 
 # --- 4. systemd drop-in (distro updates can't clobber ExecStart) ----------------

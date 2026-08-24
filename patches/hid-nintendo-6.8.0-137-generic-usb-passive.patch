@@ -1,0 +1,235 @@
+# hid-nintendo passive-USB-only patch (ProBlue) - kernel 6.8.0-137-generic
+#
+# Pristine base: joycond reference_docs/hid-nintendo.c (srcversion
+# 2CD415D1BC942425DF1683D). Porting: fetch pristine source of target kernel,
+# apply, resolve conflicts against these anchors, rebuild, run PLAN.md
+# acceptance tests.
+#
+# 1. joycon_is_passive() [anchor: after joycon_using_usb] - USB-only
+#    predicate; BT stays byte-for-byte stock.
+# 2. joycon_send_usb() deleted - the driver NEVER writes to USB.
+# 3. joycon_init() [anchor] - passive transports send nothing.
+# 4. nintendo_hid_probe() [anchor] - USB exits right after hidraw exists;
+#    no input/leds/battery nodes. Wire never carries input.
+# 5. nintendo_hid_resume() [anchor] - NULL-input guard for passive ctlrs.
+#
+# Deliberately NOT here: any arm (subcmd 0x08) - that lives in BlueZ procon
+# plugin (wired session) + its delayed per-connect queue.
+
+--- a/drivers/hid/hid-nintendo.c
++++ b/drivers/hid/hid-nintendo.c
+@@ -825,6 +825,18 @@
+ 	return ctlr->hdev->bus == BUS_USB;
+ }
+ 
++/*
++ * ProBlue fork: only the USB transport is passive. bluetoothd's procon
++ * plugin drives the wired side over the USB hidraw (session handshake,
++ * pairing subcommands), so the driver must not write to that hidraw at all.
++ * BT is 100% stock: full init + input + leds/battery, parsing the 0x30
++ * reports into the real /dev/input device.
++ */
++static inline bool joycon_is_passive(struct joycon_ctlr *ctlr)
++{
++	return joycon_using_usb(ctlr);
++}
++
+ static int __joycon_hid_send(struct hid_device *hdev, u8 *data, size_t len)
+ {
+ 	u8 *buf;
+@@ -959,20 +971,6 @@
+ 	return ret;
+ }
+ 
+-static int joycon_send_usb(struct joycon_ctlr *ctlr, u8 cmd, u32 timeout)
+-{
+-	int ret;
+-	u8 buf[2] = {JC_OUTPUT_USB_CMD};
+-
+-	buf[1] = cmd;
+-	ctlr->usb_ack_match = cmd;
+-	ctlr->msg_type = JOYCON_MSG_TYPE_USB;
+-	ret = joycon_hid_send_sync(ctlr, buf, sizeof(buf), timeout);
+-	if (ret)
+-		hid_dbg(ctlr->hdev, "send usb command failed; ret=%d\n", ret);
+-	return ret;
+-}
+-
+ static int joycon_send_subcmd(struct joycon_ctlr *ctlr,
+ 			      struct joycon_subcmd_request *subcmd,
+ 			      size_t data_len, u32 timeout)
+@@ -2518,85 +2516,72 @@
+ 	int ret = 0;
+ 
+ 	mutex_lock(&ctlr->output_mutex);
+-	/* if handshake command fails, assume ble pro controller */
+-	if (joycon_using_usb(ctlr) && !joycon_send_usb(ctlr, JC_USB_CMD_HANDSHAKE, HZ)) {
+-		hid_dbg(hdev, "detected USB controller\n");
+-		/* set baudrate for improved latency */
+-		ret = joycon_send_usb(ctlr, JC_USB_CMD_BAUDRATE_3M, HZ);
+-		if (ret) {
+-			hid_err(hdev, "Failed to set baudrate; ret=%d\n", ret);
+-			goto out_unlock;
+-		}
+-		/* handshake */
+-		ret = joycon_send_usb(ctlr, JC_USB_CMD_HANDSHAKE, HZ);
++
++	/*
++	 * ProBlue fork: the USB transport is passive (joycon_is_passive).
++	 * The wired session (0x80 handshake / 0x80 04 no-timeout lock /
++	 * pairing subcommands) belongs to bluetoothd's procon plugin over the
++	 * hidraw; sending any of it here collides with that session and pins
++	 * the controller to USB, killing the BT radio while docked. On USB we
++	 * send nothing. BT below is stock.
++	 */
++	if (!joycon_is_passive(ctlr)) {
++		/* needed to retrieve the controller type */
++		ret = joycon_read_info(ctlr);
+ 		if (ret) {
+-			hid_err(hdev, "Failed handshake; ret=%d\n", ret);
++			hid_err(hdev, "Failed to retrieve controller info; ret=%d\n",
++				ret);
+ 			goto out_unlock;
+ 		}
+-		/*
+-		 * Set no timeout (to keep controller in USB mode).
+-		 * This doesn't send a response, so ignore the timeout.
+-		 */
+-		joycon_send_usb(ctlr, JC_USB_CMD_NO_TIMEOUT, HZ/10);
+-	} else if (jc_type_is_chrggrip(ctlr)) {
+-		hid_err(hdev, "Failed charging grip handshake\n");
+-		ret = -ETIMEDOUT;
+-		goto out_unlock;
+-	}
+-
+-	/* needed to retrieve the controller type */
+-	ret = joycon_read_info(ctlr);
+-	if (ret) {
+-		hid_err(hdev, "Failed to retrieve controller info; ret=%d\n",
+-			ret);
+-		goto out_unlock;
+-	}
+ 
+-	if (joycon_has_joysticks(ctlr)) {
+-		/* get controller calibration data, and parse it */
+-		ret = joycon_request_calibration(ctlr);
+-		if (ret) {
+-			/*
+-			 * We can function with default calibration, but it may be
+-			 * inaccurate. Provide a warning, and continue on.
+-			 */
+-			hid_warn(hdev, "Analog stick positions may be inaccurate\n");
++		if (joycon_has_joysticks(ctlr)) {
++			/* get controller calibration data, and parse it */
++			ret = joycon_request_calibration(ctlr);
++			if (ret) {
++				/*
++				 * We can function with default calibration, but it may be
++				 * inaccurate. Provide a warning, and continue on.
++				 */
++				hid_warn(hdev, "Analog stick positions may be inaccurate\n");
++			}
+ 		}
+-	}
+ 
+-	if (joycon_has_imu(ctlr)) {
+-		/* get IMU calibration data, and parse it */
+-		ret = joycon_request_imu_calibration(ctlr);
+-		if (ret) {
+-			/*
+-			 * We can function with default calibration, but it may be
+-			 * inaccurate. Provide a warning, and continue on.
+-			 */
+-			hid_warn(hdev, "Unable to read IMU calibration data\n");
++		if (joycon_has_imu(ctlr)) {
++			/* get IMU calibration data, and parse it */
++			ret = joycon_request_imu_calibration(ctlr);
++			if (ret) {
++				/*
++				 * We can function with default calibration, but it may be
++				 * inaccurate. Provide a warning, and continue on.
++				 */
++				hid_warn(hdev, "Unable to read IMU calibration data\n");
++			}
++
++			/* Enable the IMU */
++			ret = joycon_enable_imu(ctlr);
++			if (ret) {
++				hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
++				goto out_unlock;
++			}
+ 		}
+ 
+-		/* Enable the IMU */
+-		ret = joycon_enable_imu(ctlr);
++		/* Set the reporting mode to 0x30, which is the full report mode */
++		ret = joycon_set_report_mode(ctlr);
+ 		if (ret) {
+-			hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
++			hid_err(hdev, "Failed to set report mode; ret=%d\n", ret);
+ 			goto out_unlock;
+ 		}
+-	}
+-
+-	/* Set the reporting mode to 0x30, which is the full report mode */
+-	ret = joycon_set_report_mode(ctlr);
+-	if (ret) {
+-		hid_err(hdev, "Failed to set report mode; ret=%d\n", ret);
+-		goto out_unlock;
+-	}
+ 
+-	if (joycon_has_rumble(ctlr)) {
+-		/* Enable rumble */
+-		ret = joycon_enable_rumble(ctlr);
+-		if (ret) {
+-			hid_err(hdev, "Failed to enable rumble; ret=%d\n", ret);
+-			goto out_unlock;
++		if (joycon_has_rumble(ctlr)) {
++			/* Enable rumble */
++			ret = joycon_enable_rumble(ctlr);
++			if (ret) {
++				hid_err(hdev, "Failed to enable rumble; ret=%d\n", ret);
++				goto out_unlock;
++			}
+ 		}
++	} else {
++		hid_info(hdev, "passive probe (ProBlue fork): nothing sent, hidraw only\n");
+ 	}
+ 
+ out_unlock:
+@@ -2741,6 +2726,18 @@
+ 		goto err_close;
+ 	}
+ 
++	/*
++	 * ProBlue fork: USB instances stay passive — no leds, no battery, no
++	 * input device. The wire never carries input (Switch parity); the
++	 * pairing plugin owns the hidraw. ctlr_state stays INIT so incoming
++	 * reports are ignored (ctlr->input is NULL). BT falls through to the
++	 * stock probe below.
++	 */
++	if (joycon_is_passive(ctlr)) {
++		hid_dbg(hdev, "probe - success (passive)\n");
++		return 0;
++	}
++
+ 	/* Initialize the leds */
+ 	ret = joycon_leds_create(ctlr);
+ 	if (ret) {
+@@ -2803,9 +2800,13 @@
+ 	int ret;
+ 
+ 	hid_dbg(hdev, "resume\n");
+-	if (!joycon_using_usb(ctlr)) {
+-		hid_dbg(hdev, "no-op resume for bt ctlr\n");
+-		ctlr->ctlr_state = JOYCON_CTLR_STATE_READ;
++	if (joycon_is_passive(ctlr)) {
++		/*
++		 * ProBlue fork: passive (USB) controllers have no input device;
++		 * flipping ctlr_state to READ would make the event handler parse
++		 * reports against a NULL input device. Send nothing instead.
++		 */
++		hid_dbg(hdev, "no-op resume for passive ctlr\n");
+ 		return 0;
+ 	}
+ 
