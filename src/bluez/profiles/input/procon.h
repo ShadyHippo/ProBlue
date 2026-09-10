@@ -1,28 +1,25 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- *
  *  BlueZ - Bluetooth protocol stack for Linux
  *
  *  Copyright (C) 2026  Tim Van Dyke <tim.vandyke123@gmail.com>
  *
- *  Nintendo Switch Pro Controller cable pairing (over-cable).
+ *  Nintendo Switch Pro Controller cable pairing.
  *
- *  The Pro Controller is NOT a PlayStation-style cable-paired device: it does
- *  not do over-the-air SSP when connecting. It arrives carrying a link key in
- *  its SPI flash (written by the Switch's 3-step protocol) and connects only
- *  to the host whose MAC + key it has stored. The wired flow therefore must:
+ *  The Pro Controller does not do over-the-air SSP: it connects only to the
+ *  host whose Bluetooth address and link key it has stored in its SPI flash.
+ *  A host fills that flash through the wired 3-step protocol (subcmd 0x01),
+ *  so pairing on Linux means driving the controller over its USB hidraw node:
  *
- *    1. read the controller's BT address (subcmd 0x02, device info),
- *    2. run the wired 3-step (subcmd 0x01: x01 host-MAC -> x02 GET_LTK ->
- *       x03 save) so the controller's flash agrees with our host,
- *    3. register the acquired LTK in bluetoothd storage AND load it into the
- *       kernel (MGMT_OP_LOAD_LINK_KEYS) BEFORE the controller connects —
- *       there is no runtime add-key path in BlueZ 5.84.
+ *    1. start the wired UART session (0x80 02, 0x03, 0x02),
+ *    2. read the controller's address (subcmd 0x02, device info),
+ *    3. run the 3-step (host address, GET_LTK, save),
+ *    4. store the returned LTK in bluetoothd and the kernel before the
+ *       controller connects (BlueZ 5.84 has no runtime add-key path).
  *
- *  This is the vendor-specific half of the cable-pairing mechanism. The
- *  shared mechanism (CablePairingType enum, struct cable_pairing) lives in
- *  profiles/input/sixaxis.h — legacy name, shared infrastructure; the PS
- *  device table stays there, this file owns everything Nintendo.
+ *  The shared cable-pairing infrastructure (CablePairingType, struct
+ *  cable_pairing, the PlayStation device table) lives in sixaxis.h; everything
+ *  Nintendo-specific lives here.
  */
 
 #ifndef _PROCON_H_
@@ -30,90 +27,65 @@
 
 #include "profiles/input/sixaxis.h"
 
-#define PROCON_VID			0x057e
-#define PROCON_PID			0x2009
-#define PROCON_NAME			"Pro Controller"
+#define PROCON_VID	0x057e
+#define PROCON_PID	0x2009
+#define PROCON_NAME	"Pro Controller"
 
-/* Output report 0x01 (subcmd) layout, same over USB and BT intr channel:
- *   [0] = report id 0x01, [1] = packet counter (low nibble),
- *   [2..9] = rumble (8 zero bytes), [10] = subcmd id, [11+] = data.
- * Reply report 0x21: [13] = ACK (0x80+ = ok), [14] = subcmd id, [15+] = data.
+/*
+ * Every host->controller subcommand uses output report 0x01, over USB and over
+ * the Bluetooth interrupt channel alike:
+ *
+ *      [0]     report id (PROCON_REPORT_SUBCMD)
+ *      [1]     packet counter, low nibble
+ *      [2..9]  rumble data (zero here)
+ *      [10]    subcommand id
+ *      [11..]  subcommand payload
+ *
+ * The controller answers with report 0x21:
+ *
+ *      [13]    ack, >= 0x80 on success, 0x00 on NACK
+ *      [14]    subcommand id echo
+ *      [15..]  reply payload
  */
-#define PROCON_REPORT_SUBCMD		0x01
-#define PROCON_REPORT_ACK		0x21
+#define PROCON_REPORT_SUBCMD	0x01
+#define PROCON_REPORT_ACK	0x21
 
-/* USB-mode commands (raw 2-byte writes) */
-#define PROCON_USB_CMD_HANDSHAKE	0x02	/* start UART session */
-#define PROCON_USB_CMD_BAUDRATE_3M	0x03	/* switch to 3 Mbit */
+/* Wired session commands: 2-byte writes [0x80][cmd], answered by [0x81][cmd]. */
+#define PROCON_USB_REPORT_CMD	0x80
+#define PROCON_USB_REPORT_ACK	0x81
+#define PROCON_USB_CMD_HANDSHAKE	0x02	/* (re)start the UART session */
+#define PROCON_USB_CMD_BAUDRATE_3M	0x03	/* switch the session to 3 Mbit */
 
-#define PROCON_SUBCMD_BT_MANUAL_PAIR	0x01	/* the wired 3-step pairing */
-#define PROCON_SUBCMD_REQ_DEV_INFO	0x02	/* controller MAC + type */
-#define PROCON_SUBCMD_SET_REPORT_MODE	0x03	/* 0x30 = standard full report */
-#define PROCON_REPORT_MODE_FULL		0x30	/* data for subcmd 0x03 (standard full) */
-#define PROCON_SUBCMD_SET_SHIPMENT_STATE 0x08	/* 0x00 = clear (reconnect-keeper) */
-#define PROCON_SUBCMD_SET_PLAYER_LIGHTS	0x30	/* 0x01..0x08 = player LEDs */
+/* Subcommands handled here; all other Pro Controller subcommands belong to
+ * hid-nintendo and must not be sent by a second writer. */
+#define PROCON_SUBCMD_BT_MANUAL_PAIR	0x01	/* the wired 3-step */
+#define PROCON_SUBCMD_REQ_DEV_INFO	0x02	/* controller address */
+#define PROCON_SUBCMD_SET_SHIPMENT_STATE 0x08	/* 0x00 = clear */
 
-#define PROCON_PAIR_HOST_MAC		0x01
-#define PROCON_PAIR_GET_LTK		0x02
-#define PROCON_PAIR_SAVE		0x03
+/* Payload selectors for subcmd 0x01 (manual pairing). */
+#define PROCON_PAIR_HOST_MAC	0x01	/* send our address */
+#define PROCON_PAIR_GET_LTK	0x02	/* controller returns a fresh LTK */
+#define PROCON_PAIR_SAVE	0x03	/* commit the pairing to flash */
 
-/* The Switch's post-connection arm (bt_pairer.cpp:1427) — sent over a BT
- * interrupt channel after EVERY connection:
- *   0x08 00 : clear shipment mode (SPI x5000) + enable LPM-to-sleep, so a
- *             button press wakes the controller later (the reconnect-keeper);
- *   0x30 01 : player-1 LED.
- * Nothing in the current stack sends these (evidence 21).
- */
-#define PROCON_ARM_CLEAR_SHIPMENT	0x08
-#define PROCON_ARM_CLEAR_SHIPMENT_DATA	0x00
-#define PROCON_ARM_PLAYER1_LED		0x30
-#define PROCON_ARM_PLAYER1_LED_DATA	0x01
+/* subcmd 0x08 00 clears the shipment low-power state (SPI x5000) and so
+ * re-enables wake-on-button-press: the controller cannot page the host after
+ * sleep until it has been armed. The Switch sends it after every connection. */
+#define PROCON_SHIPMENT_CLEAR	0x00
 
 int procon_usb_session_init(int fd);
 int procon_arm_wired(int fd);
 int procon_get_device_bdaddr(int fd, bdaddr_t *bdaddr);
 int procon_pair(int fd, const bdaddr_t *host, uint8_t ltk[16]);
 
-/* The Nintendo over-cable device table (the Nintendo counterpart of
- * sixaxis.h get_pairing()). Only the Pro Controller for now; the table
- * exists so the shared input-profile gate (server.c) can recognize
- * Nintendo cable-paired devices the same way it recognizes PS ones. */
-static inline const struct cable_pairing *
-get_nintendo_pairing(uint16_t vid, uint16_t pid, const char *name)
-{
-	static const struct cable_pairing devices[] = {
-		{
-			.name = PROCON_NAME,
-			.source = 0x0002, /* USB */
-			.vid = PROCON_VID,
-			.pid = PROCON_PID,
-			.version = 0x0000,
-			.type = CABLE_PAIRING_PROCON,
-		},
-	};
-	guint i;
+/* Nintendo cable-pairing device table, the counterpart of get_pairing() in
+ * sixaxis.h. Used by the udev plugin and by the shared input-profile gates. */
+const struct cable_pairing *get_nintendo_pairing(uint16_t vid, uint16_t pid,
+							const char *name);
 
-	for (i = 0; i < G_N_ELEMENTS(devices); i++) {
-		if (devices[i].vid != vid)
-			continue;
-		if (devices[i].pid != pid)
-			continue;
-
-		if (name && !g_str_has_suffix(name, devices[i].name))
-			continue;
-
-		return &devices[i];
-	}
-
-	return NULL;
-}
-
-/* PROCON_HID_SDP_RECORD — the HID service record for the Pro Controller,
- * captured verbatim from bluetoothd's SDP cache on a genuine GUI pairing
- * (docs/golden/procon_sdp_cache, ServiceRecords 0x00010000, captured
- * 2026-08-10). Bare hex string like SIXAXIS_HID_SDP_RECORD.
- * Setting this kills the malformed-seed problem: services resolve from the
- * hardcoded record, no SDP seed/cache needed. */
+/* The controller's HID service record, captured verbatim from bluetoothd's
+ * SDP cache during a genuine pairing (docs/golden/procon_sdp_cache). BlueZ
+ * 5.84 cannot seed the SDP cache for this device, so the record is supplied
+ * directly, exactly like SIXAXIS_HID_SDP_RECORD. */
 #define PROCON_HID_SDP_RECORD "36017D0900000A000100000900013503191124090004"\
 	"350D350619010009001135031900110900053503191002090006350909656E09006A09"\
 	"01000900093508350619112409010109000D350F350D35061901000900133503190011"\

@@ -89,9 +89,8 @@ struct input_device {
 	uint8_t			type;
 	unsigned int		idle_timer;
 	uint8_t			procon_report_counter;
-	int			procon_setup_pos;
-	guint			procon_setup_source;
-	uint8_t			procon_setup_last;
+	guint			procon_arm_source;
+	uint8_t			procon_arm_tries;
 };
 
 static int idle_timeout = 0;
@@ -129,8 +128,8 @@ bool input_get_classic_bonded_only(void)
 
 static void input_device_enter_reconnect_mode(struct input_device *idev);
 static int connection_disconnect(struct input_device *idev, uint32_t flags);
-static void procon_setup_ack(struct input_device *idev, uint8_t ack,
-						uint8_t subcmd);
+static void procon_arm_start(struct input_device *idev);
+static void procon_arm_ack(struct input_device *idev, uint8_t ack);
 
 static bool input_device_bonded(struct input_device *idev)
 {
@@ -174,8 +173,8 @@ static void input_device_free(struct input_device *idev)
 	if (idev->report_req_timer > 0)
 		timeout_remove(idev->report_req_timer);
 
-	if (idev->procon_setup_source > 0)
-		g_source_remove(idev->procon_setup_source);
+	if (idev->procon_arm_source > 0)
+		g_source_remove(idev->procon_arm_source);
 
 	g_free(idev);
 }
@@ -394,8 +393,10 @@ static bool hidp_recv_intr_data(GIOChannel *chan, struct input_device *idev)
 		return true;
 	}
 
-	if (data[1] == PROCON_REPORT_ACK && len >= 16)
-		procon_setup_ack(idev, data[14], data[15]);
+	/* Pro Controller 0x21 reply, e.g. the shipment arm's ack. */
+	if (len >= 16 && data[1] == PROCON_REPORT_ACK &&
+			data[15] == PROCON_SUBCMD_SET_SHIPMENT_STATE)
+		procon_arm_ack(idev, data[14]);
 
 	uhid_send_input_report(idev, data + 1, len - 1);
 
@@ -1243,10 +1244,6 @@ static void input_device_update_rec(struct input_device *idev)
 		device_set_refresh_discovery(idev->device, false);
 }
 
-static void procon_setup_start(struct input_device *idev);
-static void procon_setup_ack(struct input_device *idev, uint8_t ack,
-						uint8_t subcmd);
-
 static int input_device_connected(struct input_device *idev)
 {
 	int err;
@@ -1256,18 +1253,15 @@ static int input_device_connected(struct input_device *idev)
 	/* Attempt to update SDP record if it had changed */
 	input_device_update_rec(idev);
 
-	/* Per-connection arm (the Switch's bt_pairer.cpp:1427 behavior, RE doc
-	 * "Switch always sends x08 00 after every connection"). Sent BEFORE
-	 * hidp_add_connection: the armed controller sticks on the FIRST
-	 * connection attempt, while an un-armed one does its
-	 * connect-and-self-terminate dance (btmon 2026-08-10: Remote User
-	 * Terminated 0x13 ~150 ms after PSM 19 when no arm arrived) and can
-	 * give up entirely. Every connect path funnels through here — inbound
-	 * (input_device_connadd) and outbound/auto-reconnect
-	 * (interrupt_connect_cb) — so the reconnect-keeper goes out on EVERY
-	 * connection, not just the first. */
-	info("procon: connection established, running setup");
-	procon_setup_start(idev);
+	/*
+	 * The Switch arms the controller after every connection; without it a
+	 * controller that went to sleep never pages the host again. Every
+	 * connect path funnels through here, inbound (input_device_connadd)
+	 * and outbound/auto-reconnect (interrupt_connect_cb) alike, so the arm
+	 * is sent on every connection, not just the first. procon_arm_start()
+	 * ignores everything that is not a Pro Controller.
+	 */
+	procon_arm_start(idev);
 
 	err = hidp_add_connection(idev);
 	if (err < 0)
@@ -1625,125 +1619,115 @@ void input_device_unregister(struct btd_service *service)
 	input_device_free(idev);
 }
 
-/* The Switch's post-connection setup for the Pro Controller, run over the
- * BT interrupt channel on EVERY connection, one subcommand at a time — the
- * same order stock hid-nintendo uses on BT (device-info probe first, then
- * the config subcommands) and the same send-wait-for-ack discipline
- * (joycon_hid_send_sync). Firing them back-to-back is lossy: of
- * [0x08 00, 0x03 30, 0x30 01] sent in <1ms only the 0x08 was ever acked
- * (btmon 2026-08-13) and the controller stayed in simple 0x3F mode,
- * cycling connect->drop->re-page. Each subcmd waits for its 0x21 ack
- * (500ms cap) before the next goes out. Report framing over BT is the same
- * output report 0x01 as USB: [0]=0x01, [1]=counter, [2..9]=rumble(0),
- * [10]=subcmd, [11]=data. */
-struct procon_cmd {
-	uint8_t subcmd;
-	uint8_t len;
-	uint8_t data;
-};
+/*
+ * Pro Controller keep-alive over the Bluetooth transport.
+ *
+ * The only subcommand bluetoothd sends over Bluetooth is the shipment arm
+ * (0x08 00). Everything else on that link -- device info, calibration reads,
+ * report mode 0x30, IMU/rumble, player LEDs -- belongs to hid-nintendo's own
+ * init. Sending it from here as well was tried and removed: a second writer
+ * collides with the driver's subcommand stream.
+ *
+ * The arm is what lets a sleeping controller wake the host, so it is sent
+ * after every connection, like the Switch does. Timing: the first few hundred
+ * milliseconds after a connection are dead (subcommands there time out), while
+ * a connection that receives no traffic can terminate within a couple of
+ * seconds. The first attempt therefore goes out one second after the
+ * connection and is retried twice, each attempt waiting up to 500ms for its
+ * 0x21 acknowledgement. Giving up is safe: the flag persists in the
+ * controller's flash and the next dock re-arms it over USB.
+ */
+#define PROCON_ARM_DELAY_SEC		1
+#define PROCON_ARM_MAX_TRIES		3
+#define PROCON_ARM_ACK_TIMEOUT_MS	500
 
-static const struct procon_cmd procon_setup_seq[] = {
-	{ PROCON_SUBCMD_REQ_DEV_INFO, 0, 0x00 },	/* probe first */
-	{ PROCON_ARM_CLEAR_SHIPMENT, 1, PROCON_ARM_CLEAR_SHIPMENT_DATA },
-	{ PROCON_SUBCMD_SET_REPORT_MODE, 1, PROCON_REPORT_MODE_FULL },
-	{ PROCON_ARM_PLAYER1_LED, 1, PROCON_ARM_PLAYER1_LED_DATA },
-};
+static gboolean procon_arm_timeout(gpointer user_data);
 
-static void procon_setup_next(struct input_device *idev);
+static void procon_arm_send(struct input_device *idev)
+{
+	uint8_t buf[12] = { 0 };
+	uint8_t hdr = HIDP_TRANS_DATA | HIDP_DATA_RTYPE_OUTPUT;
 
-static gboolean procon_setup_timeout(gpointer user_data)
+	if (!idev->intr_io) {
+		DBG("procon: no interrupt channel, not arming");
+		return;
+	}
+
+	buf[0] = PROCON_REPORT_SUBCMD;
+	buf[1] = idev->procon_report_counter++ & 0x0f;
+	buf[10] = PROCON_SUBCMD_SET_SHIPMENT_STATE;
+	buf[11] = PROCON_SHIPMENT_CLEAR;
+
+	if (!hidp_send_intr_message(idev, hdr, buf, sizeof(buf))) {
+		info("procon: subcmd 0x08 00 send failed (channel down?)");
+		return;
+	}
+
+	info("procon: subcmd 0x08 %02x sent over BT (try %d/%d)",
+			PROCON_SHIPMENT_CLEAR, idev->procon_arm_tries + 1,
+			PROCON_ARM_MAX_TRIES);
+	idev->procon_arm_source = g_timeout_add(PROCON_ARM_ACK_TIMEOUT_MS,
+						procon_arm_timeout, idev);
+}
+
+static gboolean procon_arm_timeout(gpointer user_data)
 {
 	struct input_device *idev = user_data;
 
-	idev->procon_setup_source = 0;
-	info("procon: no ack for 0x%02x, continuing", idev->procon_setup_last);
-	procon_setup_next(idev);
+	idev->procon_arm_source = 0;
+
+	if (++idev->procon_arm_tries >= PROCON_ARM_MAX_TRIES) {
+		info("procon: arm 0x08 00 unacked after %d tries, giving up",
+							PROCON_ARM_MAX_TRIES);
+		return FALSE;
+	}
+
+	procon_arm_send(idev);
 
 	return FALSE;
 }
 
-static void procon_setup_send(struct input_device *idev)
+static gboolean procon_arm_delay_expired(gpointer user_data)
 {
-	const struct procon_cmd *cmd;
-	uint8_t buf[12];
-	uint8_t hdr = HIDP_TRANS_DATA | HIDP_DATA_RTYPE_OUTPUT;
-	bool ok;
+	struct input_device *idev = user_data;
 
-	if (idev->procon_setup_pos < 0)
-		return;
+	idev->procon_arm_source = 0;
+	idev->procon_arm_tries = 0;
+	procon_arm_send(idev);
 
-	if (idev->procon_setup_pos >= (int)G_N_ELEMENTS(procon_setup_seq)) {
-		idev->procon_setup_pos = -1;
-		return;
-	}
-
-	if (!idev->intr_io) {
-		idev->procon_setup_pos = -1;
-		return;
-	}
-
-	cmd = &procon_setup_seq[idev->procon_setup_pos];
-
-	memset(buf, 0, sizeof(buf));
-	buf[0] = PROCON_REPORT_SUBCMD;
-	buf[1] = idev->procon_report_counter++ & 0x0f;
-	buf[10] = cmd->subcmd;
-	if (cmd->len)
-		buf[11] = cmd->data;
-
-	idev->procon_setup_last = cmd->subcmd;
-	ok = hidp_send_intr_message(idev, hdr, buf, 11 + cmd->len);
-	if (!ok) {
-		info("procon: subcmd 0x%02x SEND FAILED (intr channel down?)",
-								cmd->subcmd);
-		idev->procon_setup_pos = -1;
-		return;
-	}
-
-	info("procon: subcmd 0x%02x %02x sent over BT", cmd->subcmd, cmd->data);
-	idev->procon_setup_source = g_timeout_add(500, procon_setup_timeout,
-								idev);
+	return FALSE;
 }
 
-static void procon_setup_next(struct input_device *idev)
+static void procon_arm_start(struct input_device *idev)
 {
-	if (idev->procon_setup_pos < 0)
+	if (btd_device_get_vendor(idev->device) != PROCON_VID ||
+			btd_device_get_product(idev->device) != PROCON_PID)
 		return;
 
-	idev->procon_setup_pos++;
-	procon_setup_send(idev);
-}
-
-static void procon_setup_start(struct input_device *idev)
-{
-	if (idev->procon_setup_source > 0) {
-		g_source_remove(idev->procon_setup_source);
-		idev->procon_setup_source = 0;
+	if (idev->procon_arm_source > 0) {
+		g_source_remove(idev->procon_arm_source);
+		idev->procon_arm_source = 0;
 	}
 
-	idev->procon_setup_pos = 0;
-	procon_setup_send(idev);
+	info("procon: connection established, arming in %ds",
+				PROCON_ARM_DELAY_SEC);
+	idev->procon_arm_source = g_timeout_add_seconds(PROCON_ARM_DELAY_SEC,
+					procon_arm_delay_expired, idev);
 }
 
-/* Called from hidp_recv_intr_data when a 0x21 subcmd reply arrives:
- * raw report [14]=ack (0x80+ ok), [15]=subcmd echo. */
-static void procon_setup_ack(struct input_device *idev, uint8_t ack,
-						uint8_t subcmd)
+/* Called from hidp_recv_intr_data() for a 0x21 arm reply. */
+static void procon_arm_ack(struct input_device *idev, uint8_t ack)
 {
-	if (idev->procon_setup_pos < 0 || subcmd != idev->procon_setup_last)
+	if (idev->procon_arm_source == 0)
 		return;
 
-	if (idev->procon_setup_source > 0) {
-		g_source_remove(idev->procon_setup_source);
-		idev->procon_setup_source = 0;
-	}
+	g_source_remove(idev->procon_arm_source);
+	idev->procon_arm_source = 0;
 
 	if (ack < 0x80)
-		info("procon: subcmd 0x%02x NACK (ack=0x%02x)", subcmd, ack);
+		info("procon: subcmd 0x08 NACK (ack=0x%02x)", ack);
 	else
-		info("procon: subcmd 0x%02x acked", subcmd);
-
-	procon_setup_next(idev);
+		info("procon: subcmd 0x08 acked");
 }
 
 static int input_device_connadd(struct input_device *idev)

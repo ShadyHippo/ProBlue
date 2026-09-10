@@ -298,11 +298,13 @@ static void agent_auth_cb(DBusError *derr, void *user_data)
 	if (closure->type == CABLE_PAIRING_PROCON) {
 		uint8_t ltk[16];
 
-		/* Wired 3-step: writes our MAC + a fresh key to the controller's
-		 * SPI flash and returns the LTK. Register it with bluetoothd +
-		 * the kernel BEFORE the controller connects — the Pro Controller
-		 * does not do over-the-air SSP, it only connects to the host
-		 * whose key it has stored (Bluez_switch_cable_plan.md §3). */
+		/*
+		 * Wired 3-step: writes our address and a fresh key into the
+		 * controller's flash and hands the key back. Register it with
+		 * bluetoothd and the kernel before the controller connects --
+		 * the controller does not do over-the-air SSP, it only connects
+		 * to a host whose key it has stored.
+		 */
 		if (procon_pair(closure->fd, adapter_bdaddr, ltk) < 0)
 			goto out;
 
@@ -310,7 +312,8 @@ static void agent_auth_cb(DBusError *derr, void *user_data)
 					ltk, HCI_LK_UNAUTH_COMBINATION, 0);
 		info("procon: link key stored");
 
-		/* No stored-central concept; log the 3-step as a rewrite */
+		/* No stored central to compare against: the 3-step just
+		 * rewrote it. */
 		bacpy(&central_bdaddr, adapter_bdaddr);
 	} else {
 		if (get_central_bdaddr(closure->fd, &central_bdaddr,
@@ -327,13 +330,8 @@ static void agent_auth_cb(DBusError *derr, void *user_data)
 	remove_device = false;
 	btd_device_set_temporary(closure->device, false);
 
-	/* Cable pairing IS the authorization (the user physically plugged the
-	 * controller in), so mark it trusted — otherwise every connection
-	 * trips the agent authorization gate (adapter.c process_auth_queue:
-	 * untrusted devices need agent approval or die "without agent"). The
-	 * GUI pairing path sets Trusted too; cable pairing must match. */
-	btd_device_set_trusted(closure->device, true);
-
+	/* Trusted and SDP record were already set in setup_device(); see there
+	 * for why cable pairing counts as authorization. */
 	if (closure->type == CABLE_PAIRING_SIXAXIS) {
 		btd_device_set_record(closure->device, HID_UUID,
 						 SIXAXIS_HID_SDP_RECORD);
@@ -374,48 +372,37 @@ static bool setup_device(int fd, const char *sysfs_path,
 	struct btd_device *device;
 	struct authentication_closure *closure;
 
-	/* Wake the BT chip's UART session before ANY subcommand — we start the
-	 * wired UART session ourselves, so without this no subcmd gets a reply
-	 * (see procon_usb_session_init(), at session start). */
+	/* procon: start the wired UART session before any subcommand --
+	 * hid-nintendo's passive probe never starts it. */
 	if (cp->type == CABLE_PAIRING_PROCON &&
 				procon_usb_session_init(fd) < 0)
 		return false;
 
-	/* Console order (c2j): subcmd 0x02 (device info / MAC probe) comes
-	 * FIRST, then 0x08 00 (arm). */
+	/* Console order: device info first, then the shipment arm. */
 	if (get_device_bdaddr(fd, &device_bdaddr, cp->type) < 0)
 		return false;
 
 	if (cp->type == CABLE_PAIRING_PROCON) {
-		/* Redock arm (0x08 00, clear shipment) on EVERY plug-in, including
-		 * already-paired controllers — the Switch re-arms after every
-		 * connection (RE doc "Switch always sends x08 00 after every
-		 * connection"); without it the controller stays in shipment mode
-		 * and never pages on a button press. A failed arm here must NOT
-		 * abort the plug-in flow — the device is already paired, and the
-		 * connectable keep below has to run regardless. */
+		/* Re-arm on every plug-in, like the Switch. A failure here is
+		 * not fatal: the controller is already paired, and the
+		 * connectable update below has to run either way. */
 		if (procon_arm_wired(fd) < 0)
 			error("procon: wired arm failed (non-fatal)");
-		/* Actively keep the host page-scanning: the controller wakes by
-		 * paging the host, and the GUI only enables connectable while
-		 * discoverable. The Switch/phones stay connectable always —
-		 * plugging in a cable-paired controller must too, or the
-		 * wake-page is never heard (plan §3 reconnect-keeper). */
+
+		/* A controller woken by a button press pages the host, so the
+		 * host must keep page-scanning; the GUI only makes it
+		 * connectable while discoverable. */
 		btd_adapter_set_connectable(adapter, true);
 	}
 
-	/* This can happen if controller was plugged while already setup and
-	 * connected eg. to charge up battery.
-	 *
-	 * The Pro Controller is EXEMPT: the Switch re-pairs on EVERY dock
-	 * (c2j: 0x02 -> 0x08 00 -> x04 push -> 0x03 30 save), and there is no
-	 * "read stored central" subcommand to detect whether the controller
-	 * still holds our key (it can be lost e.g. by pairing to another host
-	 * since the last dock). So a trusted-but-disconnected PROCON must NOT
-	 * skip: the 3-step rewrites our MAC + a fresh LTK into the controller's
-	 * SPI flash and hands us the key. Only skip when actively connected
-	 * (charging while playing - don't yank the key out of a live session;
-	 * it re-pairs on the next dock). */
+	/*
+	 * Skip devices that are already set up, e.g. a controller plugged in
+	 * to charge while connected. The Pro Controller is exempt unless it is
+	 * connected right now: the Switch re-pairs on every dock, and there is
+	 * no subcommand to read back the stored central, so the 3-step simply
+	 * rewrites the host address and a fresh key. Re-pairing a live session
+	 * would drop its key, so a connected controller is left alone.
+	 */
 	device = btd_adapter_find_device(adapter, &device_bdaddr,
 							BDADDR_BREDR);
 	if (device && btd_device_has_uuid(device, HID_UUID) &&
@@ -445,13 +432,12 @@ static bool setup_device(int fd, const char *sysfs_path,
 	btd_device_set_pnpid(device, cp->source, cp->vid, cp->pid, cp->version);
 	btd_device_set_temporary(device, true);
 
-	/* Cable pairing IS the authorization: the user physically plugged the
-	 * controller into USB (physical access required — spoofing needs the
-	 * same access a USB Rubber Ducky has). Trust it BEFORE requesting
-	 * cable authorization, so the gate in adapter.c process_auth_queue
-	 * short-circuits (btd_device_is_trusted -> auto-approve) and no agent
-	 * prompt is ever shown — the GUI pairing path trusts too; cable
-	 * pairing must match or every connection dies "without agent". */
+	/*
+	 * Physical access to the cable is the authorization, so trust the
+	 * device before asking for cable authorization: the request is then
+	 * auto-approved and no agent prompt appears. Without this every
+	 * connection fails as "without agent".
+	 */
 	btd_device_set_trusted(device, true);
 
 	closure = g_new0(struct authentication_closure, 1);

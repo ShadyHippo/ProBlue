@@ -181,34 +181,36 @@ The patch extends the same machinery:
   in (the controller wakes by paging the host; the GUI only enables
   connectable while discoverable).
 
-### `profiles/input/device.c` — the per-connection serialized setup (reconnect-keeper)
+### `profiles/input/device.c` — the per-connection arm (reconnect-keeper)
 
-`input_device_connected()` runs a **serialized subcommand setup** over the BT
-interrupt channel, started *before* `hidp_add_connection()` and continued by
-the 0x21-ack hook in `hidp_recv_intr_data()` (raw report `[1]==0x21` subcmd
-reply, `[14]`=ack, `[15]`=subcmd echo):
+`input_device_connected()` schedules the shipment arm over the BT interrupt
+channel, started *before* `hidp_add_connection()`. The 0x21-ack hook in
+`hidp_recv_intr_data()` (raw report `[1]==0x21`, `[14]`=ack, `[15]`=subcmd
+echo) marks it answered:
 
 ```
-0x02 probe → 0x08 00 arm → 0x03 30 report-mode full → 0x30 01 player-1 LED
+0x08 00 arm        (the only subcommand bluetoothd sends over Bluetooth)
 ```
 
-Each subcommand is sent only after the previous one's ack (500 ms cap — a
-timeout logs and continues the queue, so a dropped ack can't wedge a
-connection). Queue state (`procon_setup_pos/source/last`) lives in
-`struct input_device`, is cleaned up in `input_device_free()`, and restarts on
+The arm is the reconnect-keeper: `0x08 00` clears the shipment low-power state,
+which is what lets a sleeping controller wake and page the host on a button
+press. It is sent on **every** connection, matching the Switch — every connect
+path funnels through `input_device_connected()` (inbound and
+outbound/auto-reconnect).
+
+Everything else on the Bluetooth link (device-info probe, calibration reads,
+report mode `0x30`, IMU/rumble enables, player LEDs) belongs to stock
+hid-nintendo's own init and is deliberately **not** sent by bluetoothd. An
+earlier version sent that batch as well; the second writer collided with the
+driver (reply cross-delivery on shared subcommand ids) and was removed.
+
+Timing: the arm is delayed 1 s (the first few hundred ms after a connection are
+dead) and retried twice, each attempt waiting up to 500 ms for its ack, so a
+dropped ack cannot wedge the connection. The knobs are `PROCON_ARM_DELAY_SEC`,
+`PROCON_ARM_MAX_TRIES` and `PROCON_ARM_ACK_TIMEOUT_MS`, at the top of the arm
+block. State lives in `struct input_device` (`procon_arm_source` /
+`procon_arm_tries`), is cleaned up in `input_device_free()`, and restarts on
 every connection.
-
-Why ack-waited, and why this sequence:
-
-- The controller processes subcommands slowly (~0.31 s per ack) and drops an
-  un-acked batch — a fire-and-forget burst leaves it stuck in its search
-  state, cycling connect → drop → re-page.
-- `0x08 00` clears shipment / LPM-to-sleep — an un-armed controller does a
-  connect-and-self-terminate dance and can give up entirely; `0x03 30`
-  switches to standard full report mode; `0x30 01` lights player-1.
-- Every connect path funnels through `input_device_connected()` (inbound and
-  outbound/auto-reconnect), so the setup runs on **every** connection, not
-  just the first — the Switch's documented "after every connection" behavior.
 
 ### `profiles/input/server.c` — the cable-pairing gate
 

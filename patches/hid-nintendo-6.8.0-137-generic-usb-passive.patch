@@ -73,24 +73,10 @@
 -		}
 -		/* handshake */
 -		ret = joycon_send_usb(ctlr, JC_USB_CMD_HANDSHAKE, HZ);
-+
-+	/*
-+	 * ProBlue fork: the USB transport is passive (joycon_is_passive).
-+	 * The wired session (0x80 handshake / 0x80 04 no-timeout lock /
-+	 * pairing subcommands) belongs to bluetoothd's procon plugin over the
-+	 * hidraw; sending any of it here collides with that session and pins
-+	 * the controller to USB, killing the BT radio while docked. On USB we
-+	 * send nothing. BT below is stock.
-+	 */
-+	if (!joycon_is_passive(ctlr)) {
-+		/* needed to retrieve the controller type */
-+		ret = joycon_read_info(ctlr);
- 		if (ret) {
+-		if (ret) {
 -			hid_err(hdev, "Failed handshake; ret=%d\n", ret);
-+			hid_err(hdev, "Failed to retrieve controller info; ret=%d\n",
-+				ret);
- 			goto out_unlock;
- 		}
+-			goto out_unlock;
+-		}
 -		/*
 -		 * Set no timeout (to keep controller in USB mode).
 -		 * This doesn't send a response, so ignore the timeout.
@@ -102,98 +88,72 @@
 -		goto out_unlock;
 -	}
 -
--	/* needed to retrieve the controller type */
--	ret = joycon_read_info(ctlr);
--	if (ret) {
--		hid_err(hdev, "Failed to retrieve controller info; ret=%d\n",
--			ret);
--		goto out_unlock;
--	}
- 
--	if (joycon_has_joysticks(ctlr)) {
--		/* get controller calibration data, and parse it */
--		ret = joycon_request_calibration(ctlr);
--		if (ret) {
--			/*
--			 * We can function with default calibration, but it may be
--			 * inaccurate. Provide a warning, and continue on.
--			 */
--			hid_warn(hdev, "Analog stick positions may be inaccurate\n");
-+		if (joycon_has_joysticks(ctlr)) {
-+			/* get controller calibration data, and parse it */
-+			ret = joycon_request_calibration(ctlr);
-+			if (ret) {
-+				/*
-+				 * We can function with default calibration, but it may be
-+				 * inaccurate. Provide a warning, and continue on.
-+				 */
-+				hid_warn(hdev, "Analog stick positions may be inaccurate\n");
-+			}
- 		}
--	}
- 
--	if (joycon_has_imu(ctlr)) {
--		/* get IMU calibration data, and parse it */
--		ret = joycon_request_imu_calibration(ctlr);
--		if (ret) {
--			/*
--			 * We can function with default calibration, but it may be
--			 * inaccurate. Provide a warning, and continue on.
--			 */
--			hid_warn(hdev, "Unable to read IMU calibration data\n");
-+		if (joycon_has_imu(ctlr)) {
-+			/* get IMU calibration data, and parse it */
-+			ret = joycon_request_imu_calibration(ctlr);
-+			if (ret) {
-+				/*
-+				 * We can function with default calibration, but it may be
-+				 * inaccurate. Provide a warning, and continue on.
-+				 */
-+				hid_warn(hdev, "Unable to read IMU calibration data\n");
-+			}
++	/*
++	 * ProBlue fork: only the USB transport is passive. The wired UART
++	 * session (the 0x80 handshake and the "pin to USB" command) and the
++	 * pairing subcommands belong to bluetoothd's procon plugin, which
++	 * drives this same hidraw; the driver must not write to it. On USB
++	 * nothing is sent and no input/led/battery device is created (see
++	 * nintendo_hid_probe). Bluetooth below is stock.
++	 */
++	if (joycon_is_passive(ctlr)) {
++		hid_info(hdev, "passive probe (ProBlue fork): hidraw only\n");
++		goto out_unlock;
++	}
 +
-+			/* Enable the IMU */
-+			ret = joycon_enable_imu(ctlr);
-+			if (ret) {
-+				hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
-+				goto out_unlock;
-+			}
+ 	/* needed to retrieve the controller type */
+ 	ret = joycon_read_info(ctlr);
+ 	if (ret) {
+ 		hid_err(hdev, "Failed to retrieve controller info; ret=%d\n",
+ 			ret);
+ 		goto out_unlock;
+ 	}
+ 
+ 	if (joycon_has_joysticks(ctlr)) {
+ 		/* get controller calibration data, and parse it */
+ 		ret = joycon_request_calibration(ctlr);
+ 		if (ret) {
+ 			/*
+ 			 * We can function with default calibration, but it may be
+ 			 * inaccurate. Provide a warning, and continue on.
+ 			 */
+ 			hid_warn(hdev, "Analog stick positions may be inaccurate\n");
+ 		}
+ 	}
+ 
+ 	if (joycon_has_imu(ctlr)) {
+ 		/* get IMU calibration data, and parse it */
+ 		ret = joycon_request_imu_calibration(ctlr);
+ 		if (ret) {
+ 			/*
+ 			 * We can function with default calibration, but it may be
+ 			 * inaccurate. Provide a warning, and continue on.
+ 			 */
+ 			hid_warn(hdev, "Unable to read IMU calibration data\n");
  		}
  
--		/* Enable the IMU */
--		ret = joycon_enable_imu(ctlr);
-+		/* Set the reporting mode to 0x30, which is the full report mode */
-+		ret = joycon_set_report_mode(ctlr);
+ 		/* Enable the IMU */
+ 		ret = joycon_enable_imu(ctlr);
  		if (ret) {
--			hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
-+			hid_err(hdev, "Failed to set report mode; ret=%d\n", ret);
+ 			hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
  			goto out_unlock;
  		}
--	}
--
--	/* Set the reporting mode to 0x30, which is the full report mode */
--	ret = joycon_set_report_mode(ctlr);
--	if (ret) {
--		hid_err(hdev, "Failed to set report mode; ret=%d\n", ret);
--		goto out_unlock;
--	}
+ 	}
  
--	if (joycon_has_rumble(ctlr)) {
--		/* Enable rumble */
--		ret = joycon_enable_rumble(ctlr);
--		if (ret) {
--			hid_err(hdev, "Failed to enable rumble; ret=%d\n", ret);
--			goto out_unlock;
-+		if (joycon_has_rumble(ctlr)) {
-+			/* Enable rumble */
-+			ret = joycon_enable_rumble(ctlr);
-+			if (ret) {
-+				hid_err(hdev, "Failed to enable rumble; ret=%d\n", ret);
-+				goto out_unlock;
-+			}
+ 	/* Set the reporting mode to 0x30, which is the full report mode */
+ 	ret = joycon_set_report_mode(ctlr);
+ 	if (ret) {
+ 		hid_err(hdev, "Failed to set report mode; ret=%d\n", ret);
+ 		goto out_unlock;
+ 	}
+ 
+ 	if (joycon_has_rumble(ctlr)) {
+ 		/* Enable rumble */
+ 		ret = joycon_enable_rumble(ctlr);
+ 		if (ret) {
+ 			hid_err(hdev, "Failed to enable rumble; ret=%d\n", ret);
+ 			goto out_unlock;
  		}
-+	} else {
-+		hid_info(hdev, "passive probe (ProBlue fork): nothing sent, hidraw only\n");
  	}
  
  out_unlock:

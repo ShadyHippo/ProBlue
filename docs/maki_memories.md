@@ -163,9 +163,11 @@ never were, and input stayed `0x3F` simple.
 ### The fix: serialize, wait for each ack
 `profiles/input/device.c` runs the setup queue (§2 table). Ack matching hooks
 `hidp_recv_intr_data()`. Queue state lives in `struct input_device`
-(`procon_setup_pos/source/last`), cleaned up in `input_device_free()`,
-re-entrant across reconnects. Reconnect itself (page → accept → encrypt →
-PSM 17/19) verified working by the user, 2026-08-13.
+(`procon_arm_source` / `procon_arm_tries`), cleaned up in
+`input_device_free()`, re-entrant across reconnects. Later reduced to the single
+`0x08 00` arm (the rest of the old sequence duplicated hid-nintendo's own BT
+init). Reconnect itself (page → accept → encrypt → PSM 17/19) verified working
+by the user, 2026-08-13.
 
 ## 7. Earlier (superseded) steps in the trail
 

@@ -106,7 +106,7 @@ sticks center fine, input unaffected.
 every connect; a fork arm at T+2 s failed once under load). HANDLED: the
 BlueZ arm fires at T+1 s and retries ×3 (Architecture below). Tuning knobs
 if ever needed: `PROCON_ARM_DELAY_SEC` / `PROCON_ARM_MAX_TRIES` at the top
-of the queue block in `patches/bluez-5.84-procon.patch`.
+of the arm block in `patches/bluez-5.84-procon.patch`.
 3. IMU micro-gaps (60–130 ms, "compensating for N dropped IMU reports") every
 few seconds — gamepad substream unaffected; do not misread as regression.
 
