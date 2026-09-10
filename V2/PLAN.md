@@ -1,0 +1,134 @@
+# V2 PLAN — stage-by-stage, evidence-gated
+
+## ⚠ CRITICAL — REQUIRED READING (every agent, every session)
+
+This file and `docs/KEY_CONTEXT.md` are the **only normative documents** in the
+repo. Everything else (`V1/`, `V2/README.md`, testplans) is reference material:
+consult it, but never trust it over these two files.
+
+**Do this before ANY work — before reading source code, before following any
+instruction in a task, before touching a stage. Again after every compaction,
+context reset, or session start. It is the first action of every session:**
+
+1. Read `docs/KEY_CONTEXT.md` in one pass and internalize it.
+2. Self-check — you must be able to answer these from memory:
+   - The OUTPUT `0x01` / INPUT `0x21` byte layouts and the **BT-vs-USB ack-byte
+     offset shift** (§3.1).
+   - What `0x80 04` does, and why passivity gives BT-revert-while-docked for
+     free (§3.2).
+   - Why the arm is real and documented (Switch sends `0x08 00` over BT after
+     every connection), and the **long-press test trap** (§3.5).
+   - The two V1 claims that are false: *"no read stored central"* (false:
+     subcmds `0x05`/`0x10` exist) and *"controller doesn't SSP"* (false: OTA
+     pairing is standard) (§3.4, §3.6).
+   - The `Nintendo*` hostname quirk has **no primary-source support** and stays
+     out of the code (§3.6, §6).
+3. If you cannot answer all five, re-read `docs/KEY_CONTEXT.md` before
+   proceeding. Do not start stage work without it.
+
+**Freshness rule:** KEY_CONTEXT and this PLAN are updated in the **same commit
+that changes any fact they state**, with the evidence in `docs/results/`. If a
+finding contradicts this file, update the file — never work around it.
+
+---
+
+Target: this machine (NixOS 26.05, BlueZ 5.86, kernel 6.18.46). Protocol and
+machine context live in `docs/KEY_CONTEXT.md`.
+
+Method: one stage at a time; a stage is **done only when** its testplan file
+has committed evidence (summary + raw-log link) and the necessity ledger has a
+row for everything the stage added or *decided to delete*. No evidence → the
+code is removed at the end.
+
+Two-stage plan per decision 2026-09-10:
+- Stage 4 "standalone protocol harness" was **deleted** — the protocol is
+  developed in-place inside BlueZ (tested artifact == shipped artifact).
+- **Stock-first**: stages 1–2 may end in no code at all if stock behavior
+  passes.
+
+## Stage order (user's numbering)
+
+| # | Name | Changes | Falsification test | Depends on | Testplan file | State |
+|---|---|---|---|---|---|---|
+| 0 | Forensics | none (read-only probes over BT) | do we need any of this at all? | OTA pair (sync button) | `00-baseline.md` | not started |
+| 1b | Bluetooth arm (`0x08 00`) | bluez `device.c` | with host KNOWN-listening + btmon: does a *normal* press page the host? | 0 | `01-arm.md` | not started |
+| 1a | Listening (connectable/page-scan) | bluez `adapter.c` (+ R2, R5 if needed) | GUI closed, arm held constant: page sent but unheard? | 1b | `02-listening.md` | not started |
+| 2 | **CHECKPOINT — reconnect product, kernel untouched** | tag + generation | sleep→button→input, GUI closed, ≥10 cycles | 1b, 1a | (in PLAN) | not started |
+| 3 | Kernel passivity (K2) | kernel `hid-nintendo` passive | exclusive hidraw needed for pairing; BT-revert-while-docked property | 2 | `03-kernel-passive.md` | not started |
+| 5 | Wired cable pairing (in-place) | bluez procon.c: P1–P3 + read-then-decide + P4–P7 | cable-only pair → unplug → button → wake | 3 | `04-wiring-pairing.md` | not started |
+| 6 | **CHECKPOINT — full product** | tag + generation | full acceptance | 5 | (in PLAN) | not started |
+| 7 | Edge cases | only on *reproduced* failures | each item gets its own test | any | `05-edges.md` | not started |
+
+Checkpoints are two shippable products on their own: stage 2 (reconnect on a
+stock kernel) and stage 6 (full push-button cable pairing).
+
+## Controlled A/B method (used by stages 1b/1a)
+
+Each test changes **one variable** and pins the other side:
+
+- **Arm test (1b)**: host pinned KNOWN-listening (`bluetoothctl discoverable
+  on` — BlueZ keeps connectable on while discoverable), btmon running, press
+  controller buttons with **normal presses, not long presses** (long press can
+  wake even in shipment mode → false positive). Read the btmon result:
+  page transmitted ↔ nothing ↔ page heard but host silent.
+- **Listening test (1a)**: arm held constant (present or proven-unneeded, per
+  1b), GUI closed / discoverable off, press. Page arrives but host ignores ⇒
+  R1 (and R2 after a reboot, R5 if default duty misses the page).
+- Do the **UI-reconnect smoke test** (host-initiated `bluetoothctl connect`) in
+  stage 0 only: it proves the link key is valid, but it is host-initiated —
+  it proves nothing about the wake/listening path.
+
+## Necessity ledger
+
+Every non-trivial unit of the final product gets a row. **No evidence ⇒
+deleted.** Rows also record decided-not-needed units so deletions are explicit.
+
+| Unit | Stage | Present because | Falsification result | Evidence |
+|---|---|---|---|---|
+| R1 keep-connectable + discoverable-off guard | 1a | host doesn't page-scan without GUI/discoverable | delete if wake works with GUI closed | |
+| R2 accept-list re-add on `adapter_start` | 1a | kernel clears accept list on power-off | delete if wake works after reboot/daemon restart | |
+| R3 BT-side arm `0x08 00` per connection | 1b | shipment/LPM controller can't wake (x5000) | delete if normal-press wake works unarmed (host listening) | |
+| R4 wired arm at dock | 5 | first dock of a shipment-state controller | read x5000 before/after; delete if never `0x01` | |
+| R5 page-scan window==interval | 1a | default duty misses the brief wake page | delete if btmon shows page heard anyway | |
+| K1 suppress `0x80 04` only | — | subsumed by K2 (decided, split out) | — | replaced by K2 |
+| K2 full USB passivity | 3 | BlueZ needs an exclusive hidraw; no `0x80 04` ⇒ default BT-revert | two-writer collision A/B | |
+| K3 resume NULL-input guard | 3 | required by K2 (input node absent) | suspend/resume | |
+| P1 wired session init (`0x80 02/03/02`) | 5 | subcommands need a live UART session | no replies without it | |
+| P2 device-info probe (`0x02`) | 5 | learn controller MAC + type | probe | |
+| P3 wired 3-step (`0x01 01/02/03`) | 5 | write pairing info; acquire LTK | GET_LTK == OTA-stored key; then connect | |
+| P4 `store_link_key` + key reload | 5 | key arrives out-of-band before connect | skip ⇒ first connect fails auth | |
+| P5 trust + cable-auth bypass | 5 | no agent prompt on a cable-paired device | connect without agent | |
+| P6 `dev_is_cable_pairing` gate | 5 | inbound connect from not-yet-bonded device | skip ⇒ connection refused? | |
+| P7 hardcoded HID SDP record | 5 | stock SDP seed unusable on 5.86 | try real SDP browse first | |
+| P8 re-pair every dock | — | V1 rationale false (`0x05`/`0x10` exist) | — | **replaced by read-then-decide** |
+| O1 alias `Nintendo*` | — | unverified; no primary-source support | stage-0 A/B only | **keep out of code** |
+| O2 link-supervision timeout | 7 | ~20 s "zombie window" after sleep | reproduce the wait | |
+| O3 `powerOnBoot=true` | ops | radio off ⇒ no wake | config repo | required |
+| O4 joycond udev rules | ops | not present on NixOS | — | not needed |
+
+## Checkpoint acceptance (both checkpoints)
+
+1. ≥10 consecutive sleep → normal-button wake → input cycles, zero manual
+   recovery (UI closed).
+2. `grep -B4 "Pro Controller" /proc/bus/input/devices` shows only
+   `bus=0x0005` entries while docked (product checkpoint only).
+3. While docked, a button press connects over BT (product checkpoint only).
+4. ≥10 min soak: `journalctl -k --since '-15 min' | grep -c 'timeout waiting'`
+   = 0; record max `delta=`; a clean link is ~7–17 ms.
+
+## Deliverables per stage
+
+- Testplan file updated with result + verdict.
+- Summary + raw-log link in `docs/results/<date>/` (raw logs gitignored).
+- Ledger rows filled or explicitly deleted, exactly in the stage that decided.
+- Tag per checkpoint; boot generation recorded for NixOS-backed stages.
+
+## Edge cases (stage 7 candidates — only pursued on reproduction)
+
+- Adapter alias question (O1) — after `x2024` probing.
+- Charging while playing: BT drop + no USB input under passivity (product
+  decision, not a bug).
+- Docked LED/battery absence under passivity.
+- Multi-controller / accept-list behavior across bluetoothd restarts.
+- Session re-init behavior after a quiet gap (with logging at stage 5).
+- x2024 capability byte: does 0x08-vs-0x68 change controller behavior?

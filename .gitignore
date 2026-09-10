@@ -1,3 +1,10 @@
 cont_maki.sh
 .maki/
 dev_tools/results/
+
+# V2: raw measurement logs stay out of git; summaries in docs/results/ are committed.
+V2/docs/results/**/*.log
+V2/docs/results/**/*.txt
+
+# Vendored third-party reference material (RE notes, nxbt). Read-only, local only.
+external_docs/
