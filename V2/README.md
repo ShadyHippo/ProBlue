@@ -38,7 +38,8 @@ list and necessity ledger.
 | `targets/` | plain-shell build/fetch recipes, one per artifact |
 | `tools/` | fetch / regen / build / measure scripts |
 | `docs/testplan/` | one testplan file per stage, with the controlled A/B method |
-| `docs/results/` | dated evidence per test (raw logs gitignored, summaries kept) |
+| `docs/results/` | committed summaries per test |
+| `logs/` | raw measurement logs and captures (gitignored except `.gitkeep`) |
 | `external_docs/` | vendored reference repos (RE notes, nxbt), gitignored |
 
 ## Anti-goals

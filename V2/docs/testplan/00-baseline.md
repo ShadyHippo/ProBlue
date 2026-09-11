@@ -11,16 +11,19 @@
 4. Does renaming the adapter (alias `Nintendo*`) change cadence at all? (Expect
    no-op per KEY_CONTEXT §3.6; this closes the hostname thread with evidence.)
 
-## Read-only controller probes (over a BT connection; no code changes)
+## Procedure
 
-Use a disposable probe (bluetoothctl + a short L2CAP/subcmd read via an
-existing tool, or temporary debug output in a scratch daemon build — no
-committed tooling yet):
+The ordered, state-by-state runbook is `tools/stage0/README.md`. It automates
+only capture/summarise (`tools/stage0/stage0.zsh preflight|probes|cadence|alias|map|monitor|stop|collect`)
+and leaves pairing, connecting and button-press tests to the operator.
+
+Read-only controller probes over a BT connection (no code changes, no writes):
 
 - subcmd `0x05` page-list state → `0x01` = pairing info in memory.
 - SPI read `0x10` @ x2000 (two 0x18-byte reads): magic (`0x95`?), stored host
   MAC (x2004-09), LTK presence, capability x2024.
 - SPI read @ x5000: `0x01` (shipment ON → arm will be needed) vs `0xFF`.
+- subcmd `0x02` device info: fw, type, MAC.
 
 ## Measurements
 
@@ -35,8 +38,22 @@ committed tooling yet):
 
 ## Result
 
-_(summary + raw log link under docs/results/)_
+Full record: `docs/results/2026-09-10-stage0/SUMMARY.md`; raw evidence under
+`V2/logs/stage0/`.
+
+- Q1: OTA pairing works; full SSP traced (`pair.btmon.log`).
+- Q2: Pro Controller, fw `0x0421`; pairing record matches the RE docs
+  byte-for-byte; capability `0x08` (PC); **x5000 = `0xFF`** (shipment normal),
+  persistent through pairs, disconnects and SYNC-sleeps.
+- Q3: stock host-initiated connect to a sleeping controller fails (page
+  timeout). A normal button press makes the controller emit a `Connect Request`
+  and reconnect **iff the host is page-scanning**; BlueZ enables page scan on
+  its own after a disconnect. The controller's wake page is intermittent.
+- Q4 (alias): not measured this day (deferred; no signal to chase).
 
 ## Verdict
 
-_(which of stages 1b/1a are even needed; the x5000 prior for the arm test)_
+Stages 1b/1a are needed, with the arm test now **decided**: R3 is falsified
+(x5000 already `0xFF`, wake works unarmed when the host listens) and the work
+is in 1a: host listening state (R1) + controller wake intermittency.
+Ledger deltas are in `PLAN.md`.

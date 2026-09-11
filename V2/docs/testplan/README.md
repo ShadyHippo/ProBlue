@@ -7,7 +7,8 @@ test — they never override the plan or KEY_CONTEXT.
 
 Each stage has one file describing its falsification test. A stage is done
 when its file carries a **result** and a **verdict**, the raw log is linked
-under `docs/results/<date>/`, and the `PLAN.md` ledger rows are filled.
+under `logs/`, the summary in `docs/results/<date>/`, and the `PLAN.md` ledger
+rows are filled.
 
 ## The controlled A/B method
 
@@ -27,5 +28,6 @@ offset conventions.
 Checkpoints (stage 2 reconnect product, stage 6 full product) are acceptance
 lists in `PLAN.md`, not separate testplan files.
 
-Raw logs go under `docs/results/<YYYY-MM-DD-<stage>/` and are gitignored; the
-testplan files hold summaries + verdicts (committed).
+Raw logs go under `V2/logs/` and are gitignored; summaries stay in
+`docs/results/<date>/` and the testplan files hold summaries + verdicts
+(committed).

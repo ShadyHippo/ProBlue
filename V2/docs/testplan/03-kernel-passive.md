@@ -12,6 +12,13 @@ patch to 6.18.46: apply the existing passive patches, port hunk 3
 the stock USB/charggrip init block with the 13-line early-return (see
 KEY_CONTEXT §4).
 
+**Port source (decided 2026-09-11):** `V1/patches/hid-nintendo-6.8.0-137-generic-usb-passive.patch`
+is the ONLY kernel reference (`V1/src/kernel` is empty). The 6.18 tree also
+renamed `joycon_hid_resume` → `nintendo_hid_resume`. Anchors to hit:
+`joycon_is_passive()` (after `joycon_using_usb()`), delete `joycon_send_usb()`,
+`joycon_init()` early-out, `nintendo_hid_probe()` exit-after-hidraw,
+`nintendo_hid_resume()` NULL guard.
+
 ## Properties to verify
 
 1. **Exclusive hidraw**: hidraw node exists; the driver sends nothing on USB

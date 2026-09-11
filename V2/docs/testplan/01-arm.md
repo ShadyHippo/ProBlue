@@ -1,6 +1,6 @@
 # Test 01 — the arm (stage 1b)
 
-**Stage:** 1b · **Change:** bluez `device.c` BT-side `0x08 00` arm · **Status:** not started
+**Stage:** 1b · **Change:** bluez `device.c` BT-side `0x08 00` arm · **Status:** done
 
 ## Hypothesis
 

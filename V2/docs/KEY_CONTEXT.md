@@ -130,6 +130,21 @@ Reset pairing: subcmd `0x07`. **Read-only access exists: subtcmds `0x05` and
 - Factory controllers ship with shipment ON → a never-armed controller may
   never wake from normal button presses.
 
+Verified on this unit 2026-09-10 (see `docs/results/2026-09-10-stage0/SUMMARY.md`):
+
+- x5000 read `0xFF` (normal, fast-connect on) from the first read and stays
+  `0xFF` through fresh OTA pairs, host disconnects, and SYNC-click sleeps.
+  The old claim "clearing it once persists in flash" therefore **holds** here.
+- `0x08 00` on this unit is a no-op (`0xFF`→`0xFF`); the arm is **not** the
+  reconnect mechanism (ledger R3 deleted).
+- A normal button press makes the controller emit a real HCI
+  `Connect Request` (0x04). The host reconnects **iff it is page-scanning**;
+  BlueZ enables page scan (0x02) on its own after a disconnect, and
+  discoverable (0x03) is not required.
+- The controller's wake page is **intermittent**: on one occasion repeated
+  presses produced no page at all while the host was listening. When it fails,
+  the failure is controller-side, not host-side.
+
 ### 3.6 Pairing model (corrects V1's premise)
 
 - First pairing is ordinary OTA: sync button → pair mode (subcmd 0x06 x02) →
@@ -139,11 +154,15 @@ Reset pairing: subcmd `0x07`. **Read-only access exists: subtcmds `0x05` and
 - The `0x01` 3-step is for **rewriting** pairing info (and is how docking
   works); it is parity/convenience, not a necessity:
   1. `0x01 0x01 [+6B host MAC LE]` → reply echoes type; joy-con MAC in reply
-  2. `0x01 0x02` → "acquire the XORed LTK hash": key bytes each XORed with
+  2. `0x01 0x02` → "Acquire the XORed LTK hash": key bytes each XORed with
      `0xAA`, flash (LE) order. BR/EDR link key must be byte-reversed vs the
-     flash order. **Whether step 2 returns the *stored* key or generates a
-     fresh one is not settled by the docs — compare against an OTA-paired
-     stored key to find out (deletes P8 if it returns the stored key).**
+     flash order. **SETTLED (sources: RE subcommands notes + SPI flash
+     notes): step 2 returns the *stored* key — the active x2000 section's
+     current LTK ("Acquire", not "generate"; SPI notes: "it keeps the active
+     section and the current LTK used with Switch can be acquired"). No
+     fresh-key generation. Therefore P8 (re-pair every dock) is deletable
+     and GET_LTK == the OTA-stored key on this unit (`25 31 28 85 …`) is the
+     stage-5 falsification for P4–P8.**
   3. `0x01 0x03` → commit
 - **Re-pair-on-every-dock (V1 P8) is deletable**: `0x05` + SPI read of x2000
   give a read-then-decide path (magic 0x95 + stored MAC == ours → skip).
@@ -163,8 +182,16 @@ Trust (verified against pristine sources or by build):
 - BlueZ patch applies 100% clean to pristine 5.84; full build verified.
 
 Do NOT trust / known-wrong:
-- All README/PLAN **status claims** (the project's own docs were the lie
-  source; only evidence in `V1/docs/results/` counts).
+- **`V1/README.md` (and its PLAN status prose)**: AI-generated against the
+  Ubuntu build, with issues — **disavowed 2026-09-11; not authoritative at
+  all**. Only `V1/docs/results/` evidence + the RE docs count.
+- **`V1/patches/bluez-5.84-procon.patch` is a stale snapshot.** The
+  `V1/src/bluez/` tree is the superset (e.g. it contains
+  `btd_adapter_has_cable_pairing_devices` at `adapter.c:416`, which the
+  `.patch` omits). `device_is_cable_pairing()` / `device_set_cable_pairing()`
+  are stock 5.84 `src/device.c` functions — no port needed. Kernel:
+  `V1/src/kernel` is empty; the only kernel reference is
+  `V1/patches/hid-nintendo-6.8.0-137-generic-usb-passive.patch`.
 - "No read stored central" (false: 0x05/0x10).
 - "Controller doesn't SSP" (false, §3.6).
 - "Re-pair every dock required" (false, §3.4/3.6).
@@ -183,6 +210,10 @@ Do NOT trust / known-wrong:
 - **`src/` is the source of truth** (full files); patches in `stages/` are
   generated. One direction. Never hand-edit a patch (V1 bit twice on hunk
   counts).
+- **V2 port base (2026-09-11):** copy from the `V1/src/bluez/` tree, NOT from
+  `V1/patches/*.patch` (stale snapshots — the tree is the superset; see §4).
+  Kernel: `V1/patches/hid-nintendo-6.8.0-137-generic-usb-passive.patch` is
+  the only kernel reference (`V1/src/kernel` empty).
 - BlueZ: pristine via the kernel.org tarball; patch-test with
   `patch -p1 --dry-run`; build with the nix-shell recipe in §2.
 - Kernel: fetch pristine `hid-nintendo.c` for the exact target version;
