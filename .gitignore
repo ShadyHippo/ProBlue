@@ -2,17 +2,14 @@ cont_maki.sh
 .maki/
 dev_tools/results/
 
-# V2: raw measurement logs go in V2/logs/ (gitignored, .gitkeep kept);
-# committed summaries live in V2/docs/results/ and V2/docs/testplan/.
+# V2: raw measurement logs. Committed summaries live in V2/docs/results/
+# and V2/docs/testplan/.
 V2/logs/*
-!V2/logs/.gitkeep
 
 # Vendored third-party reference material (RE notes, nxbt). Read-only, local only.
 external_docs/
 
-# V2: pristine source trees materialized by tools/fetch-pristine.zsh
-# (regenerable from the pinned nixpkgs; pins recorded in V2/src/MANIFEST.md).
-V2/src/bluez/*
-!V2/src/bluez/.gitkeep
-V2/src/kernel/*
-!V2/src/kernel/.gitkeep
+# V2: pristine upstream trees, materialized by tools/fetch-pristine.zsh for
+# diffing/rebuilding. Regenerable from the pinned nixpkgs; the pin is recorded
+# in V2/src/MANIFEST.md. The reviewed artifacts under V2/src/ ARE tracked.
+V2/build/

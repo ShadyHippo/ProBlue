@@ -1,5 +1,9 @@
 # Stage 0 — controller state as read 2026-09-10
 
+> Historical record. The "what that means for the plan" reading below was
+> superseded by later measurements — see
+> [`../../hardware/intel-9260-reconnect-wedge.md`](../../hardware/intel-9260-reconnect-wedge.md).
+
 Decoded from the read-only probes in `logs/stage0/probe-*.txt`. No writes were
 made to the controller. This is the Q1 + Q2 half of stage 0.
 

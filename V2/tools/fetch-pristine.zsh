@@ -5,9 +5,13 @@
 # default) and materializes the pristine sources from the same rev the Nix
 # store used to build them:
 #
-#   V2/src/bluez/                — pristine BlueZ tree (e.g. 5.86)
-#   V2/src/kernel/hid-nintendo.c — pristine driver for the running kernel
-#   V2/src/MANIFEST.md           — pin record (rev, version, store path, URL)
+#   V2/build/pristine/bluez/                          — pristine BlueZ tree (e.g. 5.86)
+#   V2/build/pristine/kernel/drivers/hid/hid-nintendo.c — pristine driver for the running kernel
+#   V2/src/MANIFEST.md                                — pin record (rev, version, store path, URL)
+#
+# The reviewed artifacts (full patched files + patches) live under V2/src/ and
+# are tracked; the pristine trees here are throwaway reference for diffing and
+# rebuilding, which is why they are gitignored.
 #
 # Reproducible: after every system upgrade (~6 months), re-run this and the
 # sources track whatever the new flake.lock pins. Nothing is downloaded from
@@ -26,8 +30,8 @@ NIXOS_CONFIG="${NIXOS_CONFIG:-$HOME/nixos-config}"
 LOCK="$NIXOS_CONFIG/flake.lock"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BLUEZ_DIR="$ROOT/src/bluez"
-KERNEL_DIR="$ROOT/src/kernel"
+BLUEZ_DIR="$ROOT/build/pristine/bluez"
+KERNEL_DIR="$ROOT/build/pristine/kernel"
 MANIFEST="$ROOT/src/MANIFEST.md"
 
 FORCE=0
@@ -51,7 +55,7 @@ print "       nar:  $NP_NAR"
 # --- guard against clobbering edited trees -----------------------------------
 if [[ $FORCE -eq 0 ]]; then
   for d in "$BLUEZ_DIR" "$KERNEL_DIR"; do
-    if [[ -d "$d" ]] && (( $(find "$d" -mindepth 1 ! -name .gitkeep | wc -l) > 0 )); then
+    if [[ -d "$d" ]] && (( $(find "$d" -mindepth 1 | wc -l) > 0 )); then
       die "$d is not empty — refuse to overwrite. Use --force to replace (drops everything)."
     fi
   done
@@ -91,13 +95,11 @@ fi
 # --- unpack ------------------------------------------------------------------
 rm -rf "$BLUEZ_DIR" "$KERNEL_DIR"
 mkdir -p "$BLUEZ_DIR" "$KERNEL_DIR"
-touch "$BLUEZ_DIR/.gitkeep" "$KERNEL_DIR/.gitkeep"
 
 tar -xf "$BLUEZ_TAR" -C "$BLUEZ_DIR" --strip-components=1
-tar -xf "$KTAR" -C "$KERNEL_DIR" --wildcards '*/drivers/hid/hid-nintendo.c' --strip-components=3
+tar -xf "$KTAR" -C "$KERNEL_DIR" --wildcards '*/drivers/hid/hid-nintendo.c' --strip-components=1
 
-[[ -f "$KERNEL_DIR/hid-nintendo.c" ]] || die "hid-nintendo.c not where expected in kernel tarball"
-grep -q 'drivers/hid/hid-nintendo.c' "$KERNEL_DIR/hid-nintendo.c" 2>/dev/null || true  # any file sanity
+[[ -f "$KERNEL_DIR/drivers/hid/hid-nintendo.c" ]] || die "hid-nintendo.c not where expected in kernel tarball"
 
 # --- manifest ----------------------------------------------------------------
 {
@@ -115,14 +117,17 @@ grep -q 'drivers/hid/hid-nintendo.c' "$KERNEL_DIR/hid-nintendo.c" 2>/dev/null ||
   print
   print "## Regenerate / upgrade"
   print
-  print "After a system upgrade, re-run \`tools/fetch-pristine.zsh --force\` and"
-  print "re-apply the patches per KEY_CONTEXT §5 (workflow; patches live"
-  print "in \`V2/stages/\`). The kernel anchor renames to watch:"
-  print "\`joycon_hid_resume\` → \`nintendo_hid_resume\` (6.18+)."
+  print "The reviewed artifacts live in \`V2/src/\`: the full patched files"
+  print "(\`src/kernel/\`, \`src/bluez/\`) and the generated patches"
+  print "(\`src/patches/\`). After a system upgrade, re-run"
+  print "\`tools/fetch-pristine.zsh --force\` to refresh \`V2/build/pristine/\`,"
+  print "then diff/regenerate with \`tools/make-patches.zsh\` (see docs/KEY_CONTEXT.md"
+  print "§5). Kernel anchor renamed in 6.18: \`joycon_hid_resume\` →"
+  print "\`nintendo_hid_resume\`."
 } > "$MANIFEST"
 
 print
 print "Done:"
 print "  $BLUEZ_DIR"
-print "  $KERNEL_DIR/hid-nintendo.c"
+print "  $KERNEL_DIR/drivers/hid/hid-nintendo.c"
 print "  $MANIFEST"

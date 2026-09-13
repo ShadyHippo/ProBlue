@@ -1,106 +1,207 @@
-# V2 — ProBlue, rebuilt one proven step at a time
+# ProBlue
 
-Clean-room successor to `V1/` (the original ProBlue). Same goal, opposite
-process: **code enters only when a test proves it is needed.**
+Linux support for **Nintendo Switch Pro Controller cable pairing** — plug the
+controller into a PC with its USB-C cable, let it pair over the wire exactly like
+it does on a Switch, then unplug and use it as a normal Bluetooth controller.
 
-`V1/` is a frozen reference archive — read it to compare or copy specific
-pieces, never edit it.
+This is a clean-room rebuild (V2) of an earlier two-patch attempt (the frozen
+`V1/` archive). Every change here exists because a test showed the stock stack
+needs it; the [necessity ledger](#why-each-piece-is-needed) below is the record.
 
-**Read `docs/KEY_CONTEXT.md` first** — it is the machine + protocol briefing
-every piece of work in this repo is based on. `V2/PLAN.md` is the gated stage
-list and necessity ledger.
+---
 
-## Fetching the pristine sources (reproducible, upgrade-proof)
+## The problem
 
-The port targets are **exactly what this machine runs**. Nothing is cloned from
-upstream guesswork: the sources are materialized from the nix store, resolved
-from the same nixpkgs rev your system flake pins. `MANIFEST.md` in `src/`
-records the pin.
+The Pro Controller can pair to a host over its USB-C cable (that is how the
+Switch pairs it: plug in, done). On Linux two things get in the way.
 
-**First fetch (and after every system upgrade):**
+1. **The kernel driver fights the pairing.** `hid-nintendo` binds to the USB
+   interface, runs its own init, and creates a `/dev/input` device. Two problems
+   with that:
+   - It sends command `0x80 04` ("pin to USB"), which makes the controller stop
+     timing out and *never revert to Bluetooth* while plugged in. This is what
+     prevents "use it wirelessly while charging".
+   - Its init/session writes race the userspace code that needs the same
+     `hidraw` to perform pairing. The wire carries **no input** at all (input is
+     Bluetooth-only, same as on the Switch), so the `/dev/input` node it creates
+     is dead weight — but it still contends for the interface.
+2. **No userspace implements the wired pairing handshake.** The Pro Controller's
+   cable-pairing protocol (Broadcom UART session + HID subcommands that read and
+   rewrite the controller's stored pairing record) exists only in the console and
+   in a handful of reverse-engineering notes. Without it, a cable-paired
+   controller's link key never reaches the Bluetooth daemon, so the controller
+   cannot reconnect over radio afterwards.
 
-```zsh
-cd ~/Programming/ProBlue/V2
-tools/fetch-pristine.zsh            # fails if src/ already has content
-```
+Net effect on stock Linux: plugging the controller in does nothing useful, and
+if you do get it paired, the `0x80 04` from the kernel driver holds it on USB.
 
-This unpacks:
+---
 
-- `src/bluez/` — the pristine BlueZ tree (5.86)
-- `src/kernel/hid-nintendo.c` — the pristine driver for your exact kernel
-- `src/MANIFEST.md` — pinned rev, versions, store paths, sha256s
+## The solution
 
-**Overwrite (only when re-fetching after an upgrade, or to restore pristine):**
+Two focused changes. They are independent in purpose but designed to be used
+together: the kernel change frees the USB interface, and the BlueZ change uses it.
 
-```zsh
-tools/fetch-pristine.zsh --force    # DESTROYS any edits in src/
-```
+### 1. Kernel — make `hid-nintendo` passive on USB
+`src/kernel/drivers/hid/hid-nintendo.c`, patch
+`src/patches/kernel-hid-nintendo-usb-passive-6.18.46.patch`
 
-**Custom nixpkgs pin** (flake.lock not at the default path):
+On the USB transport only, the driver now binds, exposes `hidraw`, and sends
+**nothing**: no `0x80 02/03/04` session commands, no subcommands, no LED or
+battery init, no `/dev/input` device. Bluetooth is untouched and 100% stock.
 
-```zsh
-NIXOS_CONFIG=/path/to/config tools/fetch-pristine.zsh
-```
+Because nothing pins the controller to USB, it times out and reverts to
+Bluetooth on its own — which is exactly the desired "wireless while charging"
+behaviour, obtained by *not writing* rather than by adding a command.
 
-The script refuses to overwrite a non-empty `src/` unless `--force`. After a
-`nix flake update` + `nixos-rebuild switch`, re-run `--force` and re-apply the
-patches in `stages/` per `docs/KEY_CONTEXT.md` §5.
+### 2. BlueZ — implement wired (cable) pairing
+`src/bluez/…`, patch `src/patches/bluez-procon-cable-pairing-5.86.patch`
 
-## Known issue: the reconnect wedge, and the one command that fixes it
+The `sixaxis` input plugin (which already handles USB cable pairing for Sony
+controllers) grows a Nintendo Pro Controller path. When the controller is
+plugged in it:
 
-The Pro Controller intermittently "won't reconnect" because the **Intel
-Wireless-AC 9260 radio silently stops page-scanning** — the host believes
-it's listening (`hciconfig` shows PSCAN) but the controller's own scan-enable
-register has reverted to off, so the controller's pages are never heard.
+- opens the controller's `hidraw` and runs the BT-side UART session
+  (`0x80 02/03/02`),
+- reads the controller's identity (`0x02` device info) and current pairing
+  record (SPI `x2000` via `0x10`, with `0x05` as the "is a host stored?" probe),
+- decides whether to pair: if the stored record already belongs to us, it reuses
+  it; otherwise it runs the wired 3-step pairing (`0x01 01/02/03`),
+- stores the resulting BR/EDR link key in bluetoothd's storage, reloads keys,
+  marks the device **Paired + Bonded** and trusted, and accepts the inbound
+  connection.
 
-**Rescue (works every time; same as BlueJay's "Toggle Bluetooth", which is
-an rfkill cycle):**
+After that, unplugging the cable makes the controller revert to Bluetooth, and a
+button press reconnects it using the stored key.
 
-```sh
-sudo rfkill block bluetooth; sleep 1; sudo rfkill unblock bluetooth
-```
+---
 
-`bluetoothctl power off/on`, `btmgmt power off/on`, and `hcitool` HCI Reset
-do **not** clear it (mgmt power-off is deferred/raced; the kernel skips
-re-asserting page-scan when its cached flag already matches). Full record:
-`docs/wedge-investigation.md`.
+## How it works
 
-## Rules
+The protocol is the interesting part; the full byte-level digest lives in
+[`docs/KEY_CONTEXT.md`](docs/KEY_CONTEXT.md) §2. The short version:
 
-- **No OS-specific content.** `targets/` holds plain-shell build recipes.
-  Machine plumbing (NixOS overlay, kernel patches, bluetooth settings) lives in
-  the NixOS configuration, not in this repo.
-- **`src/` is the source of truth** (full patched files vs pristine upstream).
-  `stages/` is generated. One direction only; never hand-edit a patch.
-- **Nothing imports from `V1/` by path.** Reuse is an explicit copy, recorded
-  in `SALVAGE.md` with the V1 commit, file and reason.
-- **A stage is done only when** its testplan entry carries committed evidence
-  (summary + raw-log link) and the necessity ledger in `PLAN.md` has a row
-  proving what the stage added is needed — or explicitly that it isn't.
-- **Target: this machine only** — NixOS 26.05 / BlueZ 5.86 / kernel 6.18.46.
-  Portability is a non-goal until the stack is proven.
+- **Report framing.** All commands are HID OUTPUT report `0x01` (packet counter
+  + zeroed rumble + subcommand id + payload). Replies are INPUT report `0x21`,
+  whose ack byte sits at a *different offset over USB vs Bluetooth* because the
+  HIDP header is stripped by bluetoothd before the hook sees it. Both offset
+  conventions are correct in their own context.
+- **UART session.** Two-byte writes `0x80 02` (handshake), `0x80 03` (3 Mbit),
+  `0x80 02` again (re-handshake), answered by `0x81 <cmd>`. This opens the
+  controller's internal command channel; subcommands need it.
+- **Read-then-decide.** The controller stores its pairing record in SPI flash at
+  `x2000` (magic `0x95`, host MAC big-endian, LTK little-endian, capability byte).
+  Reading it tells us whether the controller is already paired to this host, which
+  avoids blindly re-pairing on every dock.
+- **The wired 3-step** (`0x01`): step 1 registers the host address, step 2 returns
+  the stored LTK (XOR-`0xAA`, flash byte order — the BR/EDR key must be
+  byte-reversed), step 3 commits.
 
-## Layout
+The reconnect side is ordinary Bluetooth: once the key is in bluetoothd and the
+device is bonded, the controller pages the host on a button press and the host
+accepts with the stored key.
+
+---
+
+## Source layout
 
 | Path | Contents |
 |---|---|
-| `docs/KEY_CONTEXT.md` | **read first**: machine facts, protocol digest, V1 autopsy, workflow |
-| `PLAN.md` | gated stages, checkpoints, necessity ledger |
-| `SALVAGE.md` | provenance of every piece copied from V1 |
-| `stages/` | generated, ordered patches (source of truth is `src/`) |
-| `src/bluez/` | full-file BlueZ sources, vs pristine 5.86 |
-| `src/kernel/` | full-file `hid-nintendo.c`, vs pristine 6.18.46 |
-| `targets/` | plain-shell build/fetch recipes, one per artifact |
-| `tools/` | fetch / regen / build / measure scripts |
-| `docs/testplan/` | one testplan file per stage, with the controlled A/B method |
-| `docs/results/` | committed summaries per test |
-| `logs/` | raw measurement logs and captures (gitignored except `.gitkeep`) |
-| `external_docs/` | vendored reference repos (RE notes, nxbt), gitignored |
+| `src/kernel/drivers/hid/hid-nintendo.c` | full **patched** driver (vs pristine 6.18.46) |
+| `src/bluez/…` | full **patched** BlueZ files (vs pristine 5.86) |
+| `src/patches/` | generated patches — what you actually apply |
+| `src/MANIFEST.md` | pinned nixpkgs rev, versions, store paths, sha256s |
+| `docs/KEY_CONTEXT.md` | protocol digest, machine facts, V1 autopsy, review concerns |
+| `PLAN.md` | stage method + necessity ledger |
+| `SALVAGE.md` | provenance of everything reused from V1 |
+| `docs/testplan/` | the controlled test per stage |
+| `docs/results/` | committed evidence summaries (raw logs are gitignored) |
+| `docs/hardware/` | secondary: an unrelated Intel-radio quirk + research notes |
+| `tools/` | fetch pristine sources, regenerate patches, build helpers |
 
-## Anti-goals
+**Rule:** `src/` holds the reviewed full files and is the source of truth;
+`src/patches/` is generated from it (`tools/make-patches.zsh`). One direction
+only — never hand-edit a generated patch.
 
-- Rebuilding the Linux input stack from scratch.
-- A general "Switch controller support" project. Scope is: cable pairing +
-  reliable reconnect for the Pro Controller.
-- Changing the Bluetooth host name (unverifiable mechanism; `KEY_CONTEXT.md`
-  §3.6/§6).
+---
+
+## Applying it
+
+```sh
+# 1. Get pristine upstream sources for the exact versions you run
+V2/tools/fetch-pristine.zsh            # → V2/build/pristine/ (gitignored)
+
+# 2. Apply the patches to those trees
+cd build/pristine/kernel && patch -p1 < ../../../src/patches/kernel-hid-nintendo-usb-passive-6.18.46.patch
+cd ../bluez               && patch -p1 < ../../../src/patches/bluez-procon-cable-pairing-5.86.patch
+
+# 3. Build BlueZ with the sixaxis plugin enabled (example, autotools)
+autoreconf -fi && ./configure --enable-sixaxis --disable-obex --disable-mesh \
+  --disable-midi --disable-nfc --disable-health --disable-test --disable-manual-pages
+make -j"$(nproc)"
+```
+
+The kernel side is a source patch for `drivers/hid/hid-nintendo.c`: rebuild the
+module or pass it through your distro's kernel-patch mechanism. The author
+deploys both through a NixOS module (`kernelPatches` + a BlueZ package override)
+kept outside this repo, since that is machine/OS plumbing rather than the
+change itself.
+
+Regenerating the patches after editing `src/`:
+
+```sh
+V2/tools/make-patches.zsh
+```
+
+---
+
+## Why each piece is needed
+
+No unit below survives without evidence; this is the project's core rule.
+Full rows and the exact falsification tests are in [`PLAN.md`](PLAN.md).
+
+### Kernel
+
+| Unit | Why it exists |
+|---|---|
+| `joycon_is_passive()` | single USB-only predicate; keeps the Bluetooth path stock |
+| delete `joycon_send_usb()` | the driver must never write to the USB hidraw (bluetoothd owns it; `0x80 04` is what pins the controller to USB) |
+| `joycon_init()` early-out | skip the UART session/baud handshake on USB |
+| `nintendo_hid_probe()` exit after hidraw | no input/LED/battery nodes for a transport that carries no input |
+| `nintendo_hid_resume()` NULL-input guard | required *by* the above: there is no input device to flip to READ |
+
+### BlueZ (all on the Pro Controller path only)
+
+| Unit | Why it exists |
+|---|---|
+| `procon.h` (new) | USB IDs, report/subcommand constants, the 3-step API, HID SDP record |
+| `procon.c` (new) | session init + framing + device-info + read-then-decide + 3-step |
+| `plugins/sixaxis.c` | dispatch by USB id; on completion store the link key, mark Paired+Bonded, trust, and set the cable-pairing flag |
+| `profiles/input/server.c` | gate inbound connections for a not-yet-bonded cable-pairing device; defer the SDP browse |
+| `profiles/input/sixaxis.h` | `CABLE_PAIRING_PROCON` device kind |
+| `src/adapter.{c,h}` | runtime link-key storage (`btd_adapter_store_link_key` + `reload_link_keys`); first-wake connectable re-assert |
+| `Makefile.plugins` | build `procon.c` under the existing `--enable-sixaxis` switch |
+
+---
+
+## Scope and anti-goals
+
+- **Targets the Pro Controller only.** Joy-Cons, charging grips and third-party
+  clones are out of scope until the Pro Controller path is solid.
+- **Not a general "Switch controller support" project.** The scope is cable
+  pairing + reliable wireless reconnect.
+- **Portability is a non-goal for now.** The reference target is the author's
+  machine (NixOS 26.05 / kernel 6.18.46 / BlueZ 5.86). The code is written to be
+  portable (kernel + BlueZ upstream only, no OS-specific coupling) but is only
+  proven there.
+- **The Bluetooth host-name/alias workaround stays out.** It has no
+  primary-source support (community folklore only); `KEY_CONTEXT.md` §2.6/§4.
+
+### A note on an unrelated hardware quirk
+
+The author's Intel Wireless-AC 9260 occasionally stops delivering pages from an
+already-paired controller until the host scan register is re-armed. It is a radio
+firmware issue, **not** caused by these patches and not fixable by them. It is
+documented separately in
+[`docs/hardware/intel-9260-reconnect-wedge.md`](docs/hardware/intel-9260-reconnect-wedge.md)
+so it does not distract from the feature above.

@@ -267,7 +267,7 @@ ProBlue V2 - stage-0 helper (automates capture + summarise only)
 
 Pairing, connecting and button-press wake tests are done by hand - see README.md.
 
-Run dir: V2/logs/stage0/  (V2/logs/ is gitignored except .gitkeep)
+Run dir: V2/logs/stage0/  (V2/logs/ is gitignored)
 EOF
 }
 

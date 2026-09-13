@@ -12,7 +12,10 @@
 
 ## Regenerate / upgrade
 
-After a system upgrade, re-run `tools/fetch-pristine.zsh --force` and
-re-apply the patches per KEY_CONTEXT §5 (workflow; patches live
-in `V2/stages/`). The kernel anchor renames to watch:
-`joycon_hid_resume` → `nintendo_hid_resume` (6.18+).
+The reviewed artifacts live in `V2/src/`: the full patched files
+(`src/kernel/`, `src/bluez/`) and the generated patches
+(`src/patches/`). After a system upgrade, re-run
+`tools/fetch-pristine.zsh --force` to refresh `V2/build/pristine/`,
+then diff/regenerate with `tools/make-patches.zsh` (see docs/KEY_CONTEXT.md
+§5). Kernel anchor renamed in 6.18: `joycon_hid_resume` →
+`nintendo_hid_resume`.

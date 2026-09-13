@@ -9,7 +9,7 @@
    shipment byte, stored pairing, capability byte.
 3. Does this machine have the problems V1 was built for — measured, not felt?
 4. Does renaming the adapter (alias `Nintendo*`) change cadence at all? (Expect
-   no-op per KEY_CONTEXT §3.6; this closes the hostname thread with evidence.)
+   no-op per KEY_CONTEXT §2.6; this closes the hostname thread with evidence.)
 
 ## Procedure
 

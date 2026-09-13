@@ -10,7 +10,7 @@ init including `0x80 04`, which also pins the radio to USB). The port of V1's
 patch to 6.18.46: apply the existing passive patches, port hunk 3
 (`joycon_init`) — upstream made the 3-Mbit baudrate failure non-fatal; replace
 the stock USB/charggrip init block with the 13-line early-return (see
-KEY_CONTEXT §4).
+KEY_CONTEXT §3).
 
 **Port source (decided 2026-09-11):** `V1/patches/hid-nintendo-6.8.0-137-generic-usb-passive.patch`
 is the ONLY kernel reference (`V1/src/kernel` is empty). The 6.18 tree also
@@ -38,9 +38,9 @@ renamed `joycon_hid_resume` → `nintendo_hid_resume`. Anchors to hit:
 
 **2026-09-11 — ported to 6.18.46, patch generated, module compiles.**
 
-- Patch: `V2/stages/03-kernel-passive-6.18.46.patch` (121 lines, 5 hunks,
+- Patch: `src/patches/kernel-hid-nintendo-usb-passive-6.18.46.patch` (5 hunks,
   applies clean `patch -p1 --dry-run`; round-trip verified pristine→apply→
-  byte-identical).
+  byte-identical to `src/kernel/drivers/hid/hid-nintendo.c`).
 - Compile: out-of-tree build vs the machine's `linux-6.18.46-dev` kbuild tree
   (nix store path from `linuxPackages.kernel.dev`):
   - pristine `hid-nintendo.c` → `.ko` clean (baseline rc=0)
@@ -62,6 +62,6 @@ input node, BT-revert-while-docked) on real hardware.
 ## Verdict
 
 **K2/K3 port complete and compile-verified at source level.** Patch ready for
-`kernelPatches` in nixos-config per KEY_CONTEXT §2/§5. Functional A/B
+`kernelPatches` in nixos-config per KEY_CONTEXT §1/§5. Functional A/B
 (two-writer collision, BT-revert-while-docked) deferred to the deployed
 kernel — record evidence there, then finalize the ledger rows K2/K3.

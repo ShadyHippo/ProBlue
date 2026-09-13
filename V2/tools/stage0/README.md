@@ -18,7 +18,7 @@ Rules:
   `0x02`, `0x05`, `0x10` only. The arm (`0x08 00`) is stage 1b.
 - One variable at a time; capture `btmon` whenever a connection event matters.
 - Never long-press during a wake test — a long press can wake a shipment-state
-  controller and be a false positive (KEY_CONTEXT §3.5).
+  controller and be a false positive (KEY_CONTEXT §2.5).
 
 ## Run dir — set once per shell
 
@@ -29,8 +29,8 @@ mkdir -p "$R"; echo "$R"
 ```
 
 Raw artifacts and captures land in `logs/` (the only other writable place is
-`/tmp`). `.gitignore` ignores `V2/logs/*` except `.gitkeep`, so raw logs stay
-out of git. The committed summary goes in `docs/testplan/00-baseline.md`.
+`/tmp`). `.gitignore` ignores `V2/logs/*`, so raw logs stay out of git. The
+committed summary goes in `docs/testplan/00-baseline.md`.
 
 Automation: `tools/stage0/stage0.zsh <phase>` does the tedious parts only
 (`preflight`, `probes`, `cadence`, `alias`, `map`, `monitor`, `stop`,

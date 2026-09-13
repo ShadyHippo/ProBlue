@@ -1,9 +1,9 @@
 # V2 testplans — method and ordering
 
-**Required reading before any test work:** `PLAN.md` §"CRITICAL — REQUIRED
-READING", then `docs/KEY_CONTEXT.md` in full, then the KEY_CONTEXT section(s)
-the specific stage depends on. Testplans are reference material for a single
-test — they never override the plan or KEY_CONTEXT.
+**Reference reading:** [`PLAN.md`](../../PLAN.md) (method + necessity ledger) and
+[`../KEY_CONTEXT.md`](../KEY_CONTEXT.md) (protocol facts). Testplans are
+reference material for a single test — they never override the plan or
+KEY_CONTEXT.
 
 Each stage has one file describing its falsification test. A stage is done
 when its file carries a **result** and a **verdict**, the raw log is linked
@@ -13,7 +13,7 @@ rows are filled.
 ## The controlled A/B method
 
 Change **one variable**; pin the other side; capture `btmon` every time.
-See `../KEY_CONTEXT.md` §3.5 for the long-press trap and §3.1 for the BT/USB
+See `../KEY_CONTEXT.md` §2.5 for the long-press trap and §2.1 for the BT/USB
 offset conventions.
 
 | Stage file | Tests |

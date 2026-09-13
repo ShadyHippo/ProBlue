@@ -1,6 +1,6 @@
-diff -ruN bluez-pristine/Makefile.plugins bluez-apply2/Makefile.plugins
---- bluez-pristine/Makefile.plugins	2026-02-08 16:26:40.000000000 -0500
-+++ bluez-apply2/Makefile.plugins	2026-09-11 11:17:28.264413675 -0400
+diff -ruN a/Makefile.plugins b/Makefile.plugins
+--- a/Makefile.plugins	2026-09-13 13:02:44.187329861 -0400
++++ b/Makefile.plugins	2026-09-13 13:02:44.194656615 -0400
 @@ -93,7 +93,8 @@
  
  if SIXAXIS
@@ -11,9 +11,9 @@ diff -ruN bluez-pristine/Makefile.plugins bluez-apply2/Makefile.plugins
  builtin_ldadd += $(UDEV_LIBS)
  endif
  
-diff -ruN bluez-pristine/plugins/sixaxis.c bluez-apply2/plugins/sixaxis.c
---- bluez-pristine/plugins/sixaxis.c	2025-09-18 14:08:44.000000000 -0400
-+++ bluez-apply2/plugins/sixaxis.c	2026-09-12 22:02:57.637741049 -0400
+diff -ruN a/plugins/sixaxis.c b/plugins/sixaxis.c
+--- a/plugins/sixaxis.c	2026-09-13 13:02:44.209376178 -0400
++++ b/plugins/sixaxis.c	2026-09-13 13:02:44.217665442 -0400
 @@ -27,9 +27,12 @@
  #include <libudev.h>
  
@@ -202,9 +202,9 @@ diff -ruN bluez-pristine/plugins/sixaxis.c bluez-apply2/plugins/sixaxis.c
  		g_free(sysfs_path);
  		return;
  	}
-diff -ruN bluez-pristine/profiles/input/procon.c bluez-apply2/profiles/input/procon.c
---- bluez-pristine/profiles/input/procon.c	1969-12-31 19:00:00.000000000 -0500
-+++ bluez-apply2/profiles/input/procon.c	2026-09-12 23:25:59.174419451 -0400
+diff -ruN a/profiles/input/procon.c b/profiles/input/procon.c
+--- a/profiles/input/procon.c	1969-12-31 19:00:00.000000000 -0500
++++ b/profiles/input/procon.c	2026-09-13 13:02:44.232441388 -0400
 @@ -0,0 +1,370 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later
 +/*
@@ -577,9 +577,9 @@ diff -ruN bluez-pristine/profiles/input/procon.c bluez-apply2/profiles/input/pro
 +	return 0;
 +}
 \ No newline at end of file
-diff -ruN bluez-pristine/profiles/input/procon.h bluez-apply2/profiles/input/procon.h
---- bluez-pristine/profiles/input/procon.h	1969-12-31 19:00:00.000000000 -0500
-+++ bluez-apply2/profiles/input/procon.h	2026-09-11 11:17:28.264806071 -0400
+diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
+--- a/profiles/input/procon.h	1969-12-31 19:00:00.000000000 -0500
++++ b/profiles/input/procon.h	2026-09-13 13:02:44.247084082 -0400
 @@ -0,0 +1,117 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +/*
@@ -699,9 +699,9 @@ diff -ruN bluez-pristine/profiles/input/procon.h bluez-apply2/profiles/input/pro
 +
 +#endif /* _PROCON_H_ */
 \ No newline at end of file
-diff -ruN bluez-pristine/profiles/input/server.c bluez-apply2/profiles/input/server.c
---- bluez-pristine/profiles/input/server.c	2025-09-18 14:08:44.000000000 -0400
-+++ bluez-apply2/profiles/input/server.c	2026-09-11 11:17:28.264926408 -0400
+diff -ruN a/profiles/input/server.c b/profiles/input/server.c
+--- a/profiles/input/server.c	2026-09-13 13:02:44.261259442 -0400
++++ b/profiles/input/server.c	2026-09-13 13:02:44.268844789 -0400
 @@ -31,6 +31,7 @@
  #include "src/profile.h"
  
@@ -761,9 +761,9 @@ diff -ruN bluez-pristine/profiles/input/server.c bluez-apply2/profiles/input/ser
  		error("Refusing connection from %s: unknown device", addr);
  		goto drop;
  	}
-diff -ruN bluez-pristine/profiles/input/sixaxis.h bluez-apply2/profiles/input/sixaxis.h
---- bluez-pristine/profiles/input/sixaxis.h	2025-09-18 14:08:44.000000000 -0400
-+++ bluez-apply2/profiles/input/sixaxis.h	2026-09-11 11:17:28.265032695 -0400
+diff -ruN a/profiles/input/sixaxis.h b/profiles/input/sixaxis.h
+--- a/profiles/input/sixaxis.h	2026-09-13 13:02:44.283030708 -0400
++++ b/profiles/input/sixaxis.h	2026-09-13 13:02:44.288784813 -0400
 @@ -13,10 +13,18 @@
  #ifndef _SIXAXIS_H_
  #define _SIXAXIS_H_
@@ -783,22 +783,23 @@ diff -ruN bluez-pristine/profiles/input/sixaxis.h bluez-apply2/profiles/input/si
  } CablePairingType;
  
  struct cable_pairing {
-diff -ruN bluez-pristine/src/adapter.c bluez-apply2/src/adapter.c
---- bluez-pristine/src/adapter.c	2026-02-08 16:26:40.000000000 -0500
-+++ bluez-apply2/src/adapter.c	2026-09-11 11:17:28.265224641 -0400
-@@ -5889,6 +5889,28 @@
+diff -ruN a/src/adapter.c b/src/adapter.c
+--- a/src/adapter.c	2026-09-13 13:02:44.297399923 -0400
++++ b/src/adapter.c	2026-09-13 13:02:44.301607454 -0400
+@@ -5889,6 +5889,29 @@
  
  	DBG("adapter %s has been enabled", adapter->path);
  
 +	/*
-+	 * The kernel clears the accept list on power-off, and nothing
-+	 * re-populates it for devices that were already non-temporary
-+	 * (the accept-list add only fires at the temporary→non-temporary
-+	 * bonding transition, device.c:6880). Re-add bonded BR/EDR devices
-+	 * on every power-on so a paired controller's wake-page is heard —
-+	 * page → kernel accepts (accept list) → link key → connect — with no
-+	 * GUI open. Harmless if the entry is already present (the kernel
-+	 * rejects the duplicate; the error log is cosmetic).
++	 * Hardening: the kernel clears the accept list on power-off and only
++	 * re-adds a device at the temporary→non-temporary bonding transition
++	 * (device.c:6880). Re-add bonded BR/EDR devices on every power-on so
++	 * the `disconnected_accept_list_entries` page-scan path stays
++	 * populated. This is NOT the reconnect-wedge fix (see
++	 * docs/hardware/intel-9260-reconnect-wedge.md); it only keeps the
++	 * accept list consistent with the bonded device set. Harmless if the
++	 * entry is already present (the kernel rejects the duplicate; the
++	 * error log is cosmetic).
 +	 */
 +	if (btd_has_kernel_features(KERNEL_CONN_CONTROL)) {
 +		GSList *l;
@@ -815,7 +816,7 @@ diff -ruN bluez-pristine/src/adapter.c bluez-apply2/src/adapter.c
  	trigger_passive_scanning(adapter);
  }
  
-@@ -8035,6 +8057,21 @@
+@@ -8035,6 +8058,21 @@
  	return 0;
  }
  
@@ -837,7 +838,7 @@ diff -ruN bluez-pristine/src/adapter.c bluez-apply2/src/adapter.c
  int btd_adapter_read_clock(struct btd_adapter *adapter, const bdaddr_t *bdaddr,
  				int which, int timeout, uint32_t *clock,
  				uint16_t *accuracy)
-@@ -8747,6 +8784,84 @@
+@@ -8747,6 +8785,84 @@
  	g_key_file_free(key_file);
  }
  
@@ -922,9 +923,9 @@ diff -ruN bluez-pristine/src/adapter.c bluez-apply2/src/adapter.c
  static void new_link_key_callback(uint16_t index, uint16_t length,
  					const void *param, void *user_data)
  {
-diff -ruN bluez-pristine/src/adapter.h bluez-apply2/src/adapter.h
---- bluez-pristine/src/adapter.h	2026-02-08 16:26:40.000000000 -0500
-+++ bluez-apply2/src/adapter.h	2026-09-11 11:17:28.266030813 -0400
+diff -ruN a/src/adapter.h b/src/adapter.h
+--- a/src/adapter.h	2026-09-13 13:02:44.309560378 -0400
++++ b/src/adapter.h	2026-09-13 13:02:44.313558761 -0400
 @@ -78,6 +78,9 @@
  const char *btd_adapter_get_name(struct btd_adapter *adapter);
  void btd_adapter_remove_device(struct btd_adapter *adapter,

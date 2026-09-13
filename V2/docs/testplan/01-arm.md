@@ -15,7 +15,7 @@ after every connection — nxbt capture).
   discoverable → the host *is* listening by construction).
 - `btmon` running for every trial.
 - Press with **normal presses only**. Long presses can wake even in shipment
-  mode (KEY_CONTEXT §3.5) and would produce a false "arm not needed".
+  mode (KEY_CONTEXT §2.5) and would produce a false "arm not needed".
 
 ## A/B
 

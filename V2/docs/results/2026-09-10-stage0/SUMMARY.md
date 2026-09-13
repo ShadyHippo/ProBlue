@@ -1,5 +1,9 @@
 # Stage 0 + 1b/1a — results 2026-09-10
 
+> Historical record. Any wedge/reconnect interpretation below was superseded by
+> later measurements — see
+> [`../../hardware/intel-9260-reconnect-wedge.md`](../../hardware/intel-9260-reconnect-wedge.md).
+
 Normative reading: `PLAN.md` and `docs/KEY_CONTEXT.md`. This file is the
 committed summary of what the stock machine can and cannot do, and why the arm
 hypothesis died. Raw evidence is under `logs/stage0/` (gitignored); every
@@ -83,7 +87,7 @@ OTA sync-button pairing works; the controller does standard SSP. V1's
    (Experiment B was proposed but not yet run.)
 2. Controller wake intermittency: press-window and cooldown characterization;
    when it fails, nothing is heard because nothing is emitted. Long-press
-   fallback confirmed (it always wakes; §3.5 trap).
+   fallback confirmed (it always wakes; §2.5 trap).
 3. Capability `0x08` vs `0x68`: does the firmware gate fast-connect on the
    stored host capability for a Switch host? Untested; only relevant if the
    PC-host path needs the Switch behavior.
