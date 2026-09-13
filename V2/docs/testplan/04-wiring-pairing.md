@@ -47,6 +47,29 @@ then gate, then SDP.
 
 ## Result
 
-_(summary + raw-log links)_
+**2026-09-11 — ported to BlueZ 5.86, patch generated, bluetoothd builds clean.**
+
+- Patch: `V2/stages/05-wiring-pairing-5.86.patch` (899 lines, 8 files:
+  `Makefile.plugins`, `plugins/sixaxis.c`, new `profiles/input/procon.{c,h}`,
+  `profiles/input/server.c`, `profiles/input/sixaxis.h`, `src/adapter.{c,h}`).
+  Applies clean `patch -p1 --dry-run` on pristine 5.86; round-trip verified
+  byte-identical on all 8 files.
+- Build: `autoreconf -fi` + `./configure --enable-sixaxis …` + `make -j`
+  per KEY_CONTEXT §2 recipe → `src/bluetoothd` (7.5 MB), zero warnings/errors.
+- The binary contains the procon protocol (verified via `strings`): session
+  framing, 3-step markers, `link key stored`.
+- Read-then-decide implemented in `procon_acquire_ltk()`: reads x2000 (subcmd
+  0x10); magic 0x95 + stored MAC == ours → LTK straight from flash (byte-
+  reversed), **no 3-step**; else full 3-step. Belt-and-braces check applies:
+  GET_LTK == OTA-stored key (`25 31 28 85 …`).
+- Not ported (decided): BT-side arm in `profiles/input/device.c` (R3
+  falsified), DISCOVERABLE-keeps-connectable hunk + accept-list re-add
+  (R1/R2), always-re-pair (P8 replaced). `btd_adapter_set_connectable` ported
+  (first-wake-after-dock, R1-adjacent — verify at functional test).
 
 ## Verdict
+
+**Stage-5 source port complete and build-verified.** Functional testing
+(cable-only pair → unplug → button → wake → input; re-dock no-op; GET_LTK ==
+stored) needs the deployed patched bluetoothd + passive kernel — deploy via
+nixos-config, then run this testplan's acceptance list.

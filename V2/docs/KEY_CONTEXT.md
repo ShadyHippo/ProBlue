@@ -141,9 +141,32 @@ Verified on this unit 2026-09-10 (see `docs/results/2026-09-10-stage0/SUMMARY.md
   `Connect Request` (0x04). The host reconnects **iff it is page-scanning**;
   BlueZ enables page scan (0x02) on its own after a disconnect, and
   discoverable (0x03) is not required.
-- The controller's wake page is **intermittent**: on one occasion repeated
-  presses produced no page at all while the host was listening. When it fails,
-  the failure is controller-side, not host-side.
+- The 14:01 "controller emitted no page while host listening" episode was
+  **re-read on 2026-09-11 as host-side deafness**, not controller-side: a
+  deaf radio (page-scan accept list dropped / scan state lost / autosuspend)
+  produces zero Connect Requests at HCI regardless of what the controller
+  does — see below.
+- **REVISED 2026-09-11 — the wedge is host-side listening loss, not the
+  controller — and is now PATCHED.** Evidence: (a) every Linux host reset
+  (reboot or BlueJay "Toggle Bluetooth" adapter power cycle) reliably
+  restores reconnects; failing-period onset is entirely random; (b) while
+  failing, the controller LEDs strobe (it IS paging) and resetting the host
+  mid-strobe reconnects **with no new button press** — the page was being
+  emitted all along; (c) btmon sees NOTHING during failure — no Connect
+  Request reaches HCI. **A full btmon trace (2026-09-11) narrows this to the
+  controller/radio layer, NOT BlueZ:** during the 22 s dead window the host
+  had page scan ON (`Write Scan Enable: Page Scan 0x02`, 46.3→68.5 s), kept
+  alive by accept-list entries (kernel `hci_update_scan_sync()`:
+  `HCI_CONNECTABLE || disconnected_accept_list_entries`). An accept-list miss
+  would still emit a Connect Request + negative reply in btmon — none
+  appears. After the UI bounce (`Reset` + re-init) the next Connect Request
+  lands **43 ms** later with no button press, proving the page was in flight
+  all along and the radio stopped delivering it (the same trace shows
+  `Intel PTT Switch Notification` → WiFi/BT coexistence). Only a controller
+  reset clears it. R2 (accept-list re-add on `adapter_start`, ported
+  2026-09-11) is therefore **hardening, not the fix** — it covers the
+  `disconnected_accept_list_entries` page-scan path, which this failure does
+  not exercise. See PLAN R2 and testplan 02 REVISION 2.
 
 ### 3.6 Pairing model (corrects V1's premise)
 
@@ -166,6 +189,64 @@ Verified on this unit 2026-09-10 (see `docs/results/2026-09-10-stage0/SUMMARY.md
   3. `0x01 0x03` → commit
 - **Re-pair-on-every-dock (V1 P8) is deletable**: `0x05` + SPI read of x2000
   give a read-then-decide path (magic 0x95 + stored MAC == ours → skip).
+
+### 3.7 THE RECONNECT WEDGE — measured 2026-09-11 (READ THIS, don't relitigate)
+
+The controller "won't connect" problem is a **host-radio wedge**, not a
+BlueZ bug and not a controller defect. Full record:
+`docs/wedge-investigation.md` (normative for this topic).
+
+- **Fingerprint (RETRACTED 2026-09-11)**: the "Read Scan Enable truncated
+  plen 4" fingerprint was an INSTRUMENTATION BUG — `hcitool cmd 0x03 0x001a`
+  is WRITE Scan Enable (OCF 0x001A, needs a param byte); READ is `0x03
+  0x0019`. The `plen 4` `02 1A 0C 00` reply is the constant answer to a
+  malformed zero-length Write — present in EVERY state, proves nothing.
+  "Register silently reverts" theory FALSIFIED: a real `Write Scan Enable:
+  Page Scan 0x02` (btmgmt connectable) was ACKED Success and did NOT
+  un-wedge; kernel PSCAN flag is inconsistent across wedges (23:58 capture:
+  `UP RUNNING` without PSCAN).
+- **What still stands (2026-09-11 23:58 session)**: while wedged, the
+  controller never connects through ANY action — WiFi radio off (no), real
+  page-scan write (no), rfkill block/unblock full reinit (NO — rescue failed
+  this session), and 20 s passive btmon shows zero HCI events. Open
+  question: is the CONTROLLER paging at all (host RX deaf vs controller-side
+  stuck)? `hcitool cmd 0x03 0x0019` + `hcitool lescan` are the truthful
+  discriminators. Upstream activity + reporting channels:
+  docs/intel-bt-remote-wake-research.md (UNMERGED as of 2026-09-12; v2 btusb
+  patch backports cleanly to 6.18 — kernelPatches candidate, test only).
+- **CONFIRMED 2026-09-12 (the corrected mechanism)**: while wedged, the
+  truthful read `hcitool cmd 0x03 0x0019` returns `02 19 0C 00 00` —
+  scan_enable GENUINELY 0x00 (No Scans), well-formed reply. The register
+  really does drop to scan-off; the kernel trusts its cached
+  `HCI_CONNECTABLE`/`HCI_PSCAN` and never re-asserts. **Gentle rescue
+  (no rfkill): `sudo hcitool cmd 0x03 0x001a 0x02` → re-read 0x0019 → 0x02 →
+  press controller button.** Explains 23:58 "rfkill failed": rfkill rewrote
+  scan-enable but the firmware dropped it again and the controller had
+  stopped paging — needed re-arm + presses, not a stack reset. TRIGGER (what
+  drops the register) still unknown — PTT/coex prime suspect.
+- **Rescue status (CORRECTED 2026-09-11)**: rfkill block/unblock reopened
+  the device through full init (incl. rewriting scan enable) — and on
+  2026-09-11 23:58 the controller STILL did not connect afterwards. Old
+  "rfkill always fixes it" is downgraded to "fixed on 2026-09-11 15:5x";
+  re-verify, and consider the controller side. Untested rescue rung: full
+  USB re-enumeration (`modprobe -r btusb && modprobe btusb`).
+  `bluetoothctl power off/on` (mgmt, deferred → BUSY/no-op) and a bare HCI
+  `Reset` remain non-rescues as measured.
+- **Falsified as the wedge**: ERTM, arm `0x08 00`, accept list (R2 = keep as
+  hardening only), USB autosuspend as live cause (`control=on` did not
+  prevent), discoverable/connectable keep-alives. Do not retry these as the
+  wedge fix.
+- **Trigger unknown** — candidates: Intel PTT/coex switch (vendor evt 0x26
+  seen), disconnect/page-timeout patterns, autosuspend as trigger (not live
+  cause). Probe while wedged with `tools/wedge-probe.sh` before any rescue.
+- **Host firmware is CURRENT (measured 2026-09-11)**: `ibt-18-16-1.sfi`
+  build `201-12.24` (ww 12, 2024) == the linux-firmware-20260810 blob; the
+  driver's `Firmware already loaded` line = version-match skip
+  (`btintel_firmware_version()` in btintel.c). The 2025 blob update was
+  bugged and reverted upstream (linux-bluetooth bug 220306) → **firmware
+  upgrade path closed**, no newer non-buggy blob exists. Fix must come from
+  trigger-hunt prevention or kernel-level self-heal (Intel vendor Reset on
+  truncated `Read Scan Enable`).
 
 ---
 

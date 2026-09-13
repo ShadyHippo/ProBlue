@@ -1,0 +1,121 @@
+--- a/drivers/hid/hid-nintendo.c	2026-09-11 09:44:12.336503581 -0400
++++ b/drivers/hid/hid-nintendo.c	2026-09-11 09:44:12.338706606 -0400
+@@ -771,6 +771,18 @@
+ 	return ctlr->hdev->bus == BUS_USB;
+ }
+ 
++/*
++ * ProBlue fork: only the USB transport is passive. bluetoothd's procon
++ * plugin drives the wired side over the USB hidraw (session handshake,
++ * pairing subcommands), so the driver must not write to that hidraw at all.
++ * BT is 100% stock: full init + input + leds/battery, parsing the 0x30
++ * reports into the real /dev/input device.
++ */
++static inline bool joycon_is_passive(struct joycon_ctlr *ctlr)
++{
++	return joycon_using_usb(ctlr);
++}
++
+ static int __joycon_hid_send(struct hid_device *hdev, u8 *data, size_t len)
+ {
+ 	u8 *buf;
+@@ -905,20 +917,6 @@
+ 	return ret;
+ }
+ 
+-static int joycon_send_usb(struct joycon_ctlr *ctlr, u8 cmd, u32 timeout)
+-{
+-	int ret;
+-	u8 buf[2] = {JC_OUTPUT_USB_CMD};
+-
+-	buf[1] = cmd;
+-	ctlr->usb_ack_match = cmd;
+-	ctlr->msg_type = JOYCON_MSG_TYPE_USB;
+-	ret = joycon_hid_send_sync(ctlr, buf, sizeof(buf), timeout);
+-	if (ret)
+-		hid_dbg(ctlr->hdev, "send usb command failed; ret=%d\n", ret);
+-	return ret;
+-}
+-
+ static int joycon_send_subcmd(struct joycon_ctlr *ctlr,
+ 			      struct joycon_subcmd_request *subcmd,
+ 			      size_t data_len, u32 timeout)
+@@ -2464,32 +2462,16 @@
+ 	int ret = 0;
+ 
+ 	mutex_lock(&ctlr->output_mutex);
+-	/* if handshake command fails, assume ble pro controller */
+-	if (joycon_using_usb(ctlr) && !joycon_send_usb(ctlr, JC_USB_CMD_HANDSHAKE, HZ)) {
+-		hid_dbg(hdev, "detected USB controller\n");
+-		/* set baudrate for improved latency */
+-		ret = joycon_send_usb(ctlr, JC_USB_CMD_BAUDRATE_3M, HZ);
+-		if (ret) {
+-			/*
+-			 * We can function with the default baudrate.
+-			 * Provide a warning, and continue on.
+-			 */
+-			hid_warn(hdev, "Failed to set baudrate (ret=%d), continuing anyway\n", ret);
+-		}
+-		/* handshake */
+-		ret = joycon_send_usb(ctlr, JC_USB_CMD_HANDSHAKE, HZ);
+-		if (ret) {
+-			hid_err(hdev, "Failed handshake; ret=%d\n", ret);
+-			goto out_unlock;
+-		}
+-		/*
+-		 * Set no timeout (to keep controller in USB mode).
+-		 * This doesn't send a response, so ignore the timeout.
+-		 */
+-		joycon_send_usb(ctlr, JC_USB_CMD_NO_TIMEOUT, HZ/10);
+-	} else if (jc_type_is_chrggrip(ctlr)) {
+-		hid_err(hdev, "Failed charging grip handshake\n");
+-		ret = -ETIMEDOUT;
++	/*
++	 * ProBlue fork: only the USB transport is passive. The wired UART
++	 * session (the 0x80 02/03/02 handshake and the "pin to USB" 0x80 04
++	 * command) and the pairing subcommands belong to bluetoothd's procon
++	 * plugin, which drives this same hidraw; the driver must not write to
++	 * it. On USB nothing is sent and no input/led/battery device is created
++	 * (see nintendo_hid_probe). Bluetooth below is stock.
++	 */
++	if (joycon_is_passive(ctlr)) {
++		hid_info(hdev, "passive probe (ProBlue fork): hidraw only\n");
+ 		goto out_unlock;
+ 	}
+ 
+@@ -2690,6 +2672,18 @@
+ 		goto err_close;
+ 	}
+ 
++	/*
++	 * ProBlue fork: USB instances stay passive — no leds, no battery, no
++	 * input device. The wire never carries input (Switch parity); the
++	 * pairing plugin owns the hidraw. ctlr_state stays INIT so incoming
++	 * reports are ignored (ctlr->input is NULL). BT falls through to the
++	 * stock probe below.
++	 */
++	if (joycon_is_passive(ctlr)) {
++		hid_dbg(hdev, "probe - success (passive)\n");
++		return 0;
++	}
++
+ 	/* Initialize the leds */
+ 	ret = joycon_leds_create(ctlr);
+ 	if (ret) {
+@@ -2755,9 +2749,13 @@
+ 	int ret;
+ 
+ 	hid_dbg(hdev, "resume\n");
+-	if (!joycon_using_usb(ctlr)) {
+-		hid_dbg(hdev, "no-op resume for bt ctlr\n");
+-		ctlr->ctlr_state = JOYCON_CTLR_STATE_READ;
++	if (joycon_is_passive(ctlr)) {
++		/*
++		 * ProBlue fork: passive (USB) controllers have no input device;
++		 * flipping ctlr_state to READ would make the event handler parse
++		 * reports against a NULL input device. Send nothing instead.
++		 */
++		hid_dbg(hdev, "no-op resume for passive ctlr\n");
+ 		return 0;
+ 	}
+ 

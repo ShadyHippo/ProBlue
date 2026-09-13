@@ -36,9 +36,32 @@ renamed `joycon_hid_resume` → `nintendo_hid_resume`. Anchors to hit:
 
 ## Result
 
-_(summary + raw-log links)_
+**2026-09-11 — ported to 6.18.46, patch generated, module compiles.**
+
+- Patch: `V2/stages/03-kernel-passive-6.18.46.patch` (121 lines, 5 hunks,
+  applies clean `patch -p1 --dry-run`; round-trip verified pristine→apply→
+  byte-identical).
+- Compile: out-of-tree build vs the machine's `linux-6.18.46-dev` kbuild tree
+  (nix store path from `linuxPackages.kernel.dev`):
+  - pristine `hid-nintendo.c` → `.ko` clean (baseline rc=0)
+  - patched → `.ko` clean (rc=0), zero warnings
+- Module contains all three markers (verified via `strings`):
+  `passive probe (ProBlue fork): hidraw only`, `probe - success (passive)`,
+  `no-op resume for passive ctlr`.
+- Anchor check (KEY_CONTEXT §5): `joycon_is_passive` used exactly 4×
+  (def @781, `joycon_init` @2473, `nintendo_hid_probe` @2682,
+  `nintendo_hid_resume` @2752). DEFAULT `joycon_hid_resume` rename confirmed
+  on 6.18.46 (it was already `nintendo_hid_resume` in pristine).
+- No residual `joycon_send_usb` refs (definition deleted; 0 grep hits).
+- `jc_type_is_chrggrip` macro now unused (harmless, `#define`).
+
+Not yet done (needs nixos-config, the scarce kernel rebuild): boot the
+patched kernel, then the functional checks below (exclusive hidraw, no USB
+input node, BT-revert-while-docked) on real hardware.
 
 ## Verdict
 
-_(K2 needed, K3 needed, BT-while-docked works — the reworked kernel hunk
-difference vs V1 recorded here so stage 5 has a stable base)_
+**K2/K3 port complete and compile-verified at source level.** Patch ready for
+`kernelPatches` in nixos-config per KEY_CONTEXT §2/§5. Functional A/B
+(two-writer collision, BT-revert-while-docked) deferred to the deployed
+kernel — record evidence there, then finalize the ledger rows K2/K3.

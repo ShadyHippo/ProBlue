@@ -9,3 +9,10 @@ V2/logs/*
 
 # Vendored third-party reference material (RE notes, nxbt). Read-only, local only.
 external_docs/
+
+# V2: pristine source trees materialized by tools/fetch-pristine.zsh
+# (regenerable from the pinned nixpkgs; pins recorded in V2/src/MANIFEST.md).
+V2/src/bluez/*
+!V2/src/bluez/.gitkeep
+V2/src/kernel/*
+!V2/src/kernel/.gitkeep

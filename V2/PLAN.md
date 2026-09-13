@@ -55,8 +55,8 @@ Two-stage plan per decision 2026-09-10:
 | 1b | Bluetooth arm (`0x08 00`) | bluez `device.c` | with host KNOWN-listening + btmon: does a *normal* press page the host? | 0 | `01-arm.md` | **done — R3 falsified, no patch** |
 | 1a | Listening (connectable/page-scan) | bluez `adapter.c` (+ R2, R5 if needed) | GUI closed, arm held constant: page sent but unheard? | 1b | `02-listening.md` | **done** (host page-scan suffices; controller wake intermittent; only R1 GUI-idle first-wake case open) |
 | 2 | **CHECKPOINT — reconnect product, kernel untouched** | tag + generation | sleep→button→input, GUI closed, ≥10 cycles | 1b, 1a | (in PLAN) | not started |
-| 3 | Kernel passivity (K2) | kernel `hid-nintendo` passive | exclusive hidraw needed for pairing; BT-revert-while-docked property | 2 | `03-kernel-passive.md` | not started |
-| 5 | Wired cable pairing (in-place) | bluez procon.c: P1–P3 + read-then-decide + P4–P7 | cable-only pair → unplug → button → wake | 3 | `04-wiring-pairing.md` | not started |
+| 3 | Kernel passivity (K2) | kernel `hid-nintendo` passive | exclusive hidraw needed for pairing; BT-revert-while-docked property | 2 | `03-kernel-passive.md` | **source port done + compile-verified** (patch `stages/03-kernel-passive-6.18.46.patch`; deploy via nixos-config) |
+| 5 | Wired cable pairing (in-place) | bluez procon.c: P1–P3 + read-then-decide + P4–P7 | cable-only pair → unplug → button → wake | 3 | `04-wiring-pairing.md` | **source port done + build-verified** (patch `stages/05-wiring-pairing-5.86.patch`; functional test on deployed stack) |
 | 6 | **CHECKPOINT — full product** | tag + generation | full acceptance | 5 | (in PLAN) | not started |
 | 7 | Edge cases | only on *reproduced* failures | each item gets its own test | any | `05-edges.md` | not started |
 
@@ -102,9 +102,11 @@ Port **from the V1 trees**, not the stale `.patch` snapshots:
 ### NOT ported (decided — do not bring across)
 
 - `profiles/input/device.c` BT-side arm (`procon_arm_*`) — R3 falsified.
-- `src/adapter.c` DISCOVERABLE-keeps-connectable hunk + accept-list re-add on
-  `adapter_start` (R1/R2 territory; stage-1a evidence says BlueZ page-scans
-  after disconnect on its own).
+- `src/adapter.c` DISCOVERABLE-keeps-connectable hunk (R1-class; stage-1a
+  evidence says BlueZ page-scans after disconnect on its own). **R2
+  accept-list re-add is now PORTED** (2026-09-11, in `adapter_start`, covers
+  all bonded BR/EDR not just cable-paired — see the R2 ledger row and
+  testplan 02 REVISION).
 - Always-re-pair on dock (P8) — replaced by read-then-decide.
 
 ## Controlled A/B method (used by stages 1b/1a)
@@ -131,25 +133,27 @@ deleted.** Rows also record decided-not-needed units so deletions are explicit.
 | Unit | Stage | Present because | Falsification result | Evidence |
 |---|---|---|---|---|
 | R1 keep-connectable + discoverable-off guard | 1a | host doesn't page-scan without GUI/discoverable | wake works with discoverable OFF (page scan 0x02) in CLI; GUI-idle scan state unverified | keep, pending GUI-state check |
-| R2 accept-list re-add on `adapter_start` | 1a | kernel clears accept list on power-off | untested — only if wake fails after reboot/daemon restart | |
+| R2 accept-list re-add on `adapter_start` | 1a | kernel clears accept list on power-off; keeps page scan via `disconnected_accept_list_entries` | **NOT the wedge fix (falsified 2026-09-11 by full btmon trace)**: dead window had page scan ON (`Write Scan Enable 0x02`, 46.3→68.5 s) AND zero Connect Request events — an accept-list miss still surfaces as a Connect Request in btmon; after UI bounce the next page lands in 43 ms with no button press → radio-layer deafness (Intel PTT/coex), not an accept-list gap | **kept as hardening only** (protects the `disconnected_accept_list_entries` page-scan path); NOT claimed as the reconnect fix; revisit only if a trace shows scan-enabled-but-filtered |
 | R3 BT-side arm `0x08 00` per connection | 1b | shipment/LPM controller can't wake (x5000) | wake works unarmed when host listening — Connect Request event, controller-initiated, no arm installed | delete (falsified) |
 | R4 wired arm at dock | 5 | first dock of a shipment-state controller | read x5000 before/after; delete if never `0x01` | |
 | R5 page-scan window==interval | 1a | default duty misses the brief wake page | page heard on default duty with page-scan-only (0x02) | delete (falsified) |
 | K1 suppress `0x80 04` only | — | subsumed by K2 (decided, split out) | — | replaced by K2 |
-| K2 full USB passivity | 3 | BlueZ needs an exclusive hidraw; no `0x80 04` ⇒ default BT-revert | two-writer collision A/B | |
-| K3 resume NULL-input guard | 3 | required by K2 (input node absent) | suspend/resume | |
-| P1 wired session init (`0x80 02/03/02`) | 5 | subcommands need a live UART session | no replies without it | |
-| P2 device-info probe (`0x02`) | 5 | learn controller MAC + type | probe | |
-| P3 wired 3-step (`0x01 01/02/03`) | 5 | write pairing info; acquire LTK | GET_LTK == OTA-stored key; then connect | **RE docs settle: step 2 returns the *stored* key** (subcommands notes "Acquire the XORed LTK hash"; SPI notes "keeps the active section…current LTK…can be acquired") → 3-step is read-out, not fresh-gen; P8 deletable |
-| P4 `store_link_key` + key reload | 5 | key arrives out-of-band before connect | skip ⇒ first connect fails auth | |
-| P5 trust + cable-auth bypass | 5 | no agent prompt on a cable-paired device | connect without agent | |
-| P6 `dev_is_cable_pairing` gate | 5 | inbound connect from not-yet-bonded device | skip ⇒ connection refused? | stock 5.84 name is `dev_is_sixaxis` — port = rename + PROCON branch; exists in V1 tree |
-| P7 hardcoded HID SDP record | 5 | stock SDP seed unusable on 5.86 | try real SDP browse first | |
+| K2 full USB passivity | 3 | BlueZ needs an exclusive hidraw; no `0x80 04` ⇒ default BT-revert | two-writer collision A/B | source port + compile verified 2026-09-11; functional A/B on deployed kernel |
+| K3 resume NULL-input guard | 3 | required by K2 (input node absent) | suspend/resume | source port + compile verified 2026-09-11; suspend/resume on deployed kernel |
+| P1 wired session init (`0x80 02/03/02`) | 5 | subcommands need a live UART session | no replies without it | build-verified 2026-09-11; live probe on deployed stack |
+| P2 device-info probe (`0x02`) | 5 | learn controller MAC + type | probe | build-verified 2026-09-11; live probe on deployed stack |
+| P3 wired 3-step (`0x01 01/02/03`) | 5 | write pairing info; acquire LTK | GET_LTK == OTA-stored key; then connect | **RE docs settle: step 2 returns the *stored* key** (subcommands notes "Acquire the XORed LTK hash"; SPI notes "keeps the active section…current LTK…can be acquired") → 3-step is read-out, not fresh-gen; P8 deletable; source port done 2026-09-11 |
+| P4 `store_link_key` + key reload | 5 | key arrives out-of-band before connect | skip ⇒ first connect fails auth | source port done 2026-09-11 (`btd_adapter_store_link_key` + `reload_link_keys`; no mgmt add-key path in 5.86 — full reload confirmed) |
+| P5 trust + cable-auth bypass | 5 | no agent prompt on a cable-paired device | connect without agent | source port done 2026-09-11 (trust-before-auth in `setup_device`) |
+| P6 `dev_is_cable_pairing` gate | 5 | inbound connect from not-yet-bonded device | skip ⇒ connection refused? | source port done 2026-09-11 (stock 5.84 name `dev_is_sixaxis` → rename + PROCON branch) |
+| P7 hardcoded HID SDP record | 5 | stock SDP seed unusable on 5.86 | try real SDP browse first | ported verbatim; P7 test: real SDP browse on 5.86 before trusting |
 | P8 re-pair every dock | — | V1 rationale false (`0x05`/`0x10` exist) | — | **replaced by read-then-decide**; doc-backed 2026-09-11 (GET_LTK = stored, §3.6) |
 | O1 alias `Nintendo*` | — | unverified; no primary-source support | stage-0 A/B only | **keep out of code** |
 | O2 link-supervision timeout | 7 | ~20 s "zombie window" after sleep | reproduce the wait | |
 | O3 `powerOnBoot=true` | ops | radio off ⇒ no wake | config repo | required |
 | O4 joycond udev rules | ops | not present on NixOS | — | not needed |
+| O5 ERTM `disable_ertm=1` + `UserspaceHID=true` | ops | community fix for connect-then-Local-terminate | deployed 2026-09-11 (`~/nixos-config` `hardware-generic.nix`; kernel param `bluetooth.disable_ertm=1`, `input.General.UserspaceHID=true`) — **did NOT fix the wedge** (different failure signature) | keep (harmless for this controller; do not claim as the reconnect fix) |
+| W1 RECONNECT WEDGE (the "won't reconnect" problem) | 1a+ops | host RX deaf vs controller-side stuck — UNPROVEN, fingerprint retracted 2026-09-11 | **RETRACTED**: 'truncated Read Scan Enable' was a probe bug (`0x03 0x001a`=WRITE; READ=`0x0019`). Open facts: 20 s btmon = 0 events; force page-scan write acked, no fix; WiFi-off no fix; Intel 9260 FW 201-12.24 (CURRENT = linux-firmware 20260810; 2025 blob reverted upstream, bg 220306 — upgrade path closed). NO BlueZ patch fixes a deaf radio. **Rescue (proven 15:5x; FAILED 23:58 — re-verify + test controller side): `sudo rfkill block bluetooth; sleep 1; sudo rfkill unblock bluetooth`.** Falsified: ERTM, arm, accept list, autosuspend-as-live-cause, power-off/on, HCI reset. | `docs/wedge-investigation.md` + KEY_CONTEXT §3.7; trigger still unknown (coex/PTT/FW) — probe wedges with `tools/wedge-probe.sh` |
 
 ## Checkpoint acceptance (both checkpoints)
 
