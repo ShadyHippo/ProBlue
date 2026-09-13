@@ -49,6 +49,17 @@ then gate, then SDP.
 
 **2026-09-11 — ported to BlueZ 5.86, patch generated, bluetoothd builds clean.**
 
+**2026-09-12 — FUNCTIONAL PASS (deployed, user-verified "flawlessly", committed).**
+Live-deploy fixes folded into the patch (see KEY_CONTEXT §3.7): device is
+marked Paired+Bonded after cable-pairing (`device_set_paired` +
+`device_set_bonded`, sixaxis.c PROCON completion — UI no longer shows
+"Pair"; power-on accept-list re-add now includes it), and the extra
+`procon_usb_session_init()` in `procon_acquire_ltk` was removed so the flow
+matches V1's proven sequence (3-step no longer stalls at save).
+Open (non-blocking): read-then-decide ("not paired to us") never hit even
+after completed saves — x2000 compare unverified (needs SPI dump);
+non-blocking hidraw fd hardening not done (latent).
+
 - Patch: `V2/stages/05-wiring-pairing-5.86.patch` (899 lines, 8 files:
   `Makefile.plugins`, `plugins/sixaxis.c`, new `profiles/input/procon.{c,h}`,
   `profiles/input/server.c`, `profiles/input/sixaxis.h`, `src/adapter.{c,h}`).

@@ -214,6 +214,13 @@ BlueZ bug and not a controller defect. Full record:
   discriminators. Upstream activity + reporting channels:
   docs/intel-bt-remote-wake-research.md (UNMERGED as of 2026-09-12; v2 btusb
   patch backports cleanly to 6.18 — kernelPatches candidate, test only).
+- **DEPLOYED 2026-09-12 (works)**: ProBlue live in ~/nixos-config
+  (machine/problue.nix; patches/). Boot-freeze bisection removed the btusb v2
+  patch + coex/autosuspend params (they hard-froze this Dell ~3s into boot).
+  Stage-5 live fixes: device now marked Paired+Bonded after cable-pairing;
+  procon_acquire_ltk's extra session re-init removed (V1-identical sequence).
+  The wedge itself is unchanged and possible — `tools/unwedge.sh` is the live
+  rescue. Full record: memory wedge-final-handoff.md + docs/KEY_CONTEXT.
 - **CONFIRMED 2026-09-12 (the corrected mechanism)**: while wedged, the
   truthful read `hcitool cmd 0x03 0x0019` returns `02 19 0C 00 00` —
   scan_enable GENUINELY 0x00 (No Scans), well-formed reply. The register
