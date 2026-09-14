@@ -82,6 +82,16 @@ plugged in it:
 After that, unplugging the cable makes the controller revert to Bluetooth, and a
 button press reconnects it using the stored key.
 
+Two expectations worth stating plainly:
+
+- **The cable never carries input.** It is pairing and charging only. After the
+  key is stored, use the controller over Bluetooth; there is no wired mode and
+  the patches deliberately create none.
+- **The halves are not interchangeable.** BlueZ's patch alone is not enough: the
+  un-patched kernel still sends `0x80 04` at probe, which pins the controller to
+  USB and races bluetoothd for the same `hidraw`. The kernel patch alone removes
+  the contention but pairs nothing. Apply both.
+
 ---
 
 ## How it works
@@ -94,16 +104,23 @@ for the wired side, and the kernel patch for the passivity. The shape is:
   The ack/subcommand bytes sit at a *different offset over USB vs Bluetooth*
   because bluetoothd strips the HIDP header before the hook sees the report —
   both conventions are correct in their own context.
-- **UART session.** Two-byte writes `0x80 02` (handshake), `0x80 03` (3 Mbit),
-  `0x80 02` again (re-handshake), answered by `0x81 <cmd>`. Subcommands are not
-  answered until this session is open, and the passive kernel never opens it.
-- **Not disturbing a live link.** `0x80 02` makes the controller commit to USB
-  and terminate an established Bluetooth connection, so it must never be sent to
-  a controller that is already connected. `0x80 01` answers with the
-  controller's own address *without* opening a session, which is what lets the
-  plug-in path recognise "this is my connected controller, leave it alone" —
-  plugging a working controller in to charge no longer drops it. A controller
-  that does not answer falls back to the session path.
+- **USB command set.** Two-byte writes `0x80 <cmd>`, answered by `0x81 <cmd>`,
+  addressed to the controller's own Bluetooth chip. This is the set that can
+  break an established link, so it is worth having in one place:
+
+  | cmd | meaning |
+  |---|---|
+  | `0x80 01` | connection status: returns the controller's own address and type, **opens no session** |
+  | `0x80 02` | UART handshake — **may be sent only once per session** |
+  | `0x80 03` | switch to 3 Mbit; must follow `0x80 02`, and a *second* `0x80 02` after it is what makes the baud switch take effect |
+  | `0x80 04` | pin to USB, no timeouts — this is what stops the controller reverting to Bluetooth |
+  | `0x80 05` | allow timeouts again |
+
+  Hence the session order is fixed (`02 03 02`) and the first command on plug-in
+  is `0x80 01`, precisely because it is the one that cannot disturb a live link:
+  plugging a working controller in to charge must not drop it. A controller that
+  does not answer `0x80 01` falls back to the session path. Subcommands are not
+  answered until the session is open, and the passive kernel never opens it.
 - **Stored pairing.** The controller keeps one host record in SPI flash at
   `x2000`: magic `0x95`, host MAC big-endian, 128-bit LTK little-endian, and a
   host-capability byte (`0x68` Switch / `0x08` PC). **Read-then-decide** reads it
@@ -153,13 +170,24 @@ cd ../bluez               && patch -p1 < ../../../src/patches/bluez-procon-cable
 
 # 3. Build BlueZ with the sixaxis plugin enabled (example, autotools)
 autoreconf -fi && ./configure --enable-sixaxis --disable-obex --disable-mesh \
-  --disable-midi --disable-nfc --disable-health --disable-test --disable-manual-pages
+  --disable-midi --disable-nfc --disable-test
 make -j"$(nproc)"
 ```
 
+Two build traps, both hit and both handled by the above:
+
+- **`autoreconf -fi` is not optional.** `Makefile.plugins` feeds `Makefile.am`,
+  so the tree's stock `Makefile.in` knows nothing about `procon.c`. Configure and
+  compile then succeed and the *link* fails with undefined references to
+  `get_nintendo_pairing` and every `procon_*` symbol.
+- **BlueZ 5.86's `configure` requires `rst2man`** even with docs disabled
+  (`docutils` in the shell below). It also no longer recognises
+  `--disable-health` or `--disable-manual-pages`; they only warn, so they are
+  dropped here.
+
 If autotools is not on `PATH`, the author builds in a shell with the toolchain
 and BlueZ's dependencies:
-`nix-shell -p autoconf automake libtool gettext glib dbus systemd.dev pkg-config readline`.
+`nix-shell -p autoconf automake libtool gettext glib dbus systemd.dev pkg-config readline docutils`.
 
 The kernel side is a source patch for `drivers/hid/hid-nintendo.c`: rebuild the
 module or pass it through your distro's kernel-patch mechanism. The author
@@ -179,6 +207,26 @@ patch -p1 -d /tmp/rt/kernel < src/patches/kernel-hid-nintendo-usb-passive-6.18.4
 diff -r /tmp/rt/bluez src/bluez
 diff /tmp/rt/kernel/drivers/hid/hid-nintendo.c src/kernel/drivers/hid/hid-nintendo.c
 ```
+
+### Adapting to other kernel / BlueZ versions
+
+The patches are anchored to upstream identifiers rather than line numbers, so
+they usually survive nearby versions — but the versions they were *proven*
+against are pinned in `src/MANIFEST.md` (kernel 6.18.46, BlueZ 5.86). When
+re-basing, check these anchors first:
+
+- Kernel, in `drivers/hid/hid-nintendo.c`: `joycon_using_usb()`;
+  `joycon_send_usb()` (the function the patch deletes); `joycon_init()` (its USB
+  init block); `nintendo_hid_probe()`; `nintendo_hid_resume()`. Note the resume
+  anchor was renamed across versions — `joycon_hid_resume` became
+  `nintendo_hid_resume` in 6.18.
+- BlueZ: `plugins/sixaxis.c` (`setup_device()`, `get_device_bdaddr()`,
+  `authentication_closure` and the `existing` handling),
+  `profiles/input/server.c`.
+
+Then re-base against the pristine tree from `tools/fetch-pristine.zsh --force`,
+regenerate with `tools/make-patches.zsh`, and re-run the round-trip check above.
+A patch that no longer applies fails the build loudly rather than silently.
 
 ---
 
@@ -247,6 +295,46 @@ are recorded here so they are not re-added:
   authorization gate can fire for a not-yet-connected device. Observed once; it
   did not block pairing.
 - `jc_type_is_chrggrip` becomes unused after the kernel change (harmless).
+
+---
+
+## Troubleshooting
+
+Work out *which half* failed before touching the patches; the two fail
+differently.
+
+**Nothing happens on plug-in.** Watch bluetoothd's log — the plugin logs each
+step (`procon: usb 0x80 0x… ack`, `procon: …`). If it never runs, the problem is
+the build (`--enable-sixaxis`) or the udev wiring, not the protocol. If it runs
+but subcommands go unanswered, the UART session never opened: check that nothing
+else writes to the same `hidraw` — an un-patched `hid-nintendo` will, and it
+races this plugin for it.
+
+**Paired, but the controller will not reconnect wirelessly.** The easiest one to
+misdiagnose, because the controller *looks* like it is trying: it strobes its
+LEDs and pages, and the host never hears it. That is a **host radio** state, not
+a pairing or key failure. Check the adapter's page scan directly:
+
+```sh
+hcitool cmd 0x03 0x0019      # Read Scan Enable; the last byte is the value
+# 02 = page scan on (healthy). 00 = the host is not listening at all.
+```
+
+If it reads `00` while the adapter is powered and a device is paired, the radio
+firmware has dropped page scan and the kernel's cached `HCI_PSCAN` flag will not
+notice — nothing re-writes the register. Re-arm it and the next button press
+connects:
+
+```sh
+hcitool cmd 0x03 0x001a 0x02     # Write Scan Enable = Page Scan
+```
+
+The author's Intel Wireless-AC 9260 does this unpredictably. It is a
+radio-firmware issue outside this repo's scope; the investigation notes were
+removed from this repository and live in its git history
+(`git show 3002b1b:docs/hardware/intel-9260-reconnect-wedge.md`). The author's
+machine runs a systemd timer that re-arms the register and logs each occurrence,
+which is also how the trigger will eventually be identified.
 
 ---
 
