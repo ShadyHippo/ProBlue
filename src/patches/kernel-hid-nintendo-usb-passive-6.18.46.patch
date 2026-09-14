@@ -1,6 +1,25 @@
+# ProBlue - hid-nintendo USB passivity (kernel 6.18.46)
+#
+# On the USB transport only, hid-nintendo binds and exposes hidraw but sends
+# nothing: no 0x80 02/03/04 session, no subcommands, no LED/battery init, and no
+# /dev/input device. Bluetooth is untouched. This frees the hidraw for
+# bluetoothd Pro Controller cable pairing, and because nothing sends 0x80 04
+# ("pin to USB") the controller reverts to Bluetooth when unplugged.
+# Full rationale: README.md.
+#
+# Apply: patch -p1, from a kernel source root.
+#
+# Copyright (C) 2026 Tim Van Dyke <tim.vandyke123@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Signed-off-by: Tim Van Dyke <tim.vandyke123@gmail.com>
+#
+# Credits: the patched file is upstream drivers/hid/hid-nintendo.c (Daniel J.
+# Ogorchock and contributors, GPL-2.0-or-later). Protocol background: dekuNukem,
+# Nintendo_Switch_Reverse_Engineering.
+
 diff -ruN a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
---- a/drivers/hid/hid-nintendo.c	2026-09-13 17:01:00.045797731 -0400
-+++ b/drivers/hid/hid-nintendo.c	2026-09-13 17:01:00.048647937 -0400
+--- a/drivers/hid/hid-nintendo.c	2026-09-13 22:13:09.217284223 -0400
++++ b/drivers/hid/hid-nintendo.c	2026-09-13 22:13:09.220034124 -0400
 @@ -771,6 +771,18 @@
  	return ctlr->hdev->bus == BUS_USB;
  }

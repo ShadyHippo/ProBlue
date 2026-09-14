@@ -1,6 +1,27 @@
+# ProBlue - BlueZ Pro Controller cable pairing (BlueZ 5.86)
+#
+# Adds a Nintendo Pro Controller path to the sixaxis input plugin. On USB
+# plug-in it runs the wired UART session over the controller hidraw, reads the
+# controller identity and its stored pairing record, reuses that record when it
+# is already paired to this host (read-then-decide) or else runs the wired
+# 3-step, then stores the link key and marks the device Paired+Bonded so it
+# reconnects over Bluetooth after unplugging. Full rationale: README.md.
+#
+# Apply: patch -p1, from a BlueZ source root.
+#
+# Copyright (C) 2026 Tim Van Dyke <tim.vandyke123@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Signed-off-by: Tim Van Dyke <tim.vandyke123@gmail.com>
+#
+# Credits: new files profiles/input/procon.{c,h} carry GPL-2.0-or-later SPDX
+# headers and the copyright above; modified files keep their upstream BlueZ
+# headers. Protocol from dekuNukem Nintendo_Switch_Reverse_Engineering
+# (bluetooth_hid_subcommands_notes.md, spi_flash_notes.md, USB-HID-Notes.md) and
+# the nxbt "Example Pairing Session" capture (Brikwerk).
+
 diff -ruN a/Makefile.plugins b/Makefile.plugins
---- a/Makefile.plugins	2026-09-13 17:00:59.940206768 -0400
-+++ b/Makefile.plugins	2026-09-13 17:00:59.944826602 -0400
+--- a/Makefile.plugins	2026-09-13 22:13:09.146097468 -0400
++++ b/Makefile.plugins	2026-09-13 22:13:09.148865609 -0400
 @@ -93,7 +93,8 @@
  
  if SIXAXIS
@@ -12,8 +33,8 @@ diff -ruN a/Makefile.plugins b/Makefile.plugins
  endif
  
 diff -ruN a/plugins/sixaxis.c b/plugins/sixaxis.c
---- a/plugins/sixaxis.c	2026-09-13 17:00:59.953284268 -0400
-+++ b/plugins/sixaxis.c	2026-09-13 17:00:59.957444779 -0400
+--- a/plugins/sixaxis.c	2026-09-13 22:13:09.154271508 -0400
++++ b/plugins/sixaxis.c	2026-09-13 22:13:09.156988499 -0400
 @@ -27,9 +27,12 @@
  #include <libudev.h>
  
@@ -204,8 +225,8 @@ diff -ruN a/plugins/sixaxis.c b/plugins/sixaxis.c
  	}
 diff -ruN a/profiles/input/procon.c b/profiles/input/procon.c
 --- a/profiles/input/procon.c	1969-12-31 19:00:00.000000000 -0500
-+++ b/profiles/input/procon.c	2026-09-13 17:00:59.966257884 -0400
-@@ -0,0 +1,370 @@
++++ b/profiles/input/procon.c	2026-09-13 22:13:09.162474333 -0400
+@@ -0,0 +1,373 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later
 +/*
 + *  BlueZ - Bluetooth protocol stack for Linux
@@ -222,6 +243,9 @@ diff -ruN a/profiles/input/procon.c b/profiles/input/procon.c
 + *  for the duration of one command round-trip. The controller normally answers
 + *  within milliseconds; the timeout is only a safety net against a dead or
 + *  unresponsive controller.
++ *
++ *  Protocol sources: dekuNukem's Nintendo_Switch_Reverse_Engineering notes and
++ *  the nxbt "Example Pairing Session" capture (Brikwerk).
 + */
 +
 +#ifdef HAVE_CONFIG_H
@@ -579,8 +603,8 @@ diff -ruN a/profiles/input/procon.c b/profiles/input/procon.c
 \ No newline at end of file
 diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
 --- a/profiles/input/procon.h	1969-12-31 19:00:00.000000000 -0500
-+++ b/profiles/input/procon.h	2026-09-13 17:00:59.974514396 -0400
-@@ -0,0 +1,119 @@
++++ b/profiles/input/procon.h	2026-09-13 22:13:09.167801343 -0400
+@@ -0,0 +1,124 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +/*
 + *  BlueZ - Bluetooth protocol stack for Linux
@@ -610,6 +634,11 @@ diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
 + *  The shared cable-pairing infrastructure (CablePairingType, struct
 + *  cable_pairing, the PlayStation device table) lives in sixaxis.h; everything
 + *  Nintendo-specific lives here.
++ *
++ *  Protocol sources: dekuNukem's Nintendo_Switch_Reverse_Engineering
++ *  (bluetooth_hid_subcommands_notes.md, spi_flash_notes.md, USB-HID-Notes.md),
++ *  the nxbt "Example Pairing Session" capture (Brikwerk), and the upstream
++ *  hid-nintendo driver for the wired frame layout.
 + */
 +
 +#ifndef _PROCON_H_
@@ -702,8 +731,8 @@ diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
 +#endif /* _PROCON_H_ */
 \ No newline at end of file
 diff -ruN a/profiles/input/server.c b/profiles/input/server.c
---- a/profiles/input/server.c	2026-09-13 17:00:59.983830151 -0400
-+++ b/profiles/input/server.c	2026-09-13 17:00:59.988986011 -0400
+--- a/profiles/input/server.c	2026-09-13 22:13:09.173137922 -0400
++++ b/profiles/input/server.c	2026-09-13 22:13:09.175791472 -0400
 @@ -31,6 +31,7 @@
  #include "src/profile.h"
  
@@ -764,8 +793,8 @@ diff -ruN a/profiles/input/server.c b/profiles/input/server.c
  		goto drop;
  	}
 diff -ruN a/profiles/input/sixaxis.h b/profiles/input/sixaxis.h
---- a/profiles/input/sixaxis.h	2026-09-13 17:00:59.997455485 -0400
-+++ b/profiles/input/sixaxis.h	2026-09-13 17:01:00.001942218 -0400
+--- a/profiles/input/sixaxis.h	2026-09-13 22:13:09.181189688 -0400
++++ b/profiles/input/sixaxis.h	2026-09-13 22:13:09.183562955 -0400
 @@ -13,10 +13,18 @@
  #ifndef _SIXAXIS_H_
  #define _SIXAXIS_H_
@@ -786,8 +815,8 @@ diff -ruN a/profiles/input/sixaxis.h b/profiles/input/sixaxis.h
  
  struct cable_pairing {
 diff -ruN a/src/adapter.c b/src/adapter.c
---- a/src/adapter.c	2026-09-13 17:01:00.010469584 -0400
-+++ b/src/adapter.c	2026-09-13 17:01:00.014849360 -0400
+--- a/src/adapter.c	2026-09-13 22:13:09.190144968 -0400
++++ b/src/adapter.c	2026-09-13 22:13:09.193363082 -0400
 @@ -5889,6 +5889,29 @@
  
  	DBG("adapter %s has been enabled", adapter->path);
@@ -926,8 +955,8 @@ diff -ruN a/src/adapter.c b/src/adapter.c
  					const void *param, void *user_data)
  {
 diff -ruN a/src/adapter.h b/src/adapter.h
---- a/src/adapter.h	2026-09-13 17:01:00.023454080 -0400
-+++ b/src/adapter.h	2026-09-13 17:01:00.027424010 -0400
+--- a/src/adapter.h	2026-09-13 22:13:09.199773356 -0400
++++ b/src/adapter.h	2026-09-13 22:13:09.202658070 -0400
 @@ -78,6 +78,9 @@
  const char *btd_adapter_get_name(struct btd_adapter *adapter);
  void btd_adapter_remove_device(struct btd_adapter *adapter,

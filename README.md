@@ -281,5 +281,22 @@ so it does not distract from the feature above.
 
 ---
 
-Licensed under the GNU General Public License v2.0 or later — see
-[`LICENSE`](LICENSE).
+## Credits and references
+
+- **Reverse engineering:** dekuNukem,
+  [Nintendo_Switch_Reverse_Engineering](https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering)
+  — `bluetooth_hid_subcommands_notes.md`, `spi_flash_notes.md`,
+  `USB-HID-Notes.md`.
+- **Pairing capture:** [nxbt](https://github.com/Brikwerk/nxbt) ("Example
+  Pairing Session").
+- **Upstream:** the kernel `hid-nintendo` driver (Daniel J. Ogorchock and
+  contributors) and the BlueZ `sixaxis` input plugin.
+
+Copyright (C) 2026 Tim Van Dyke <tim.vandyke123@gmail.com>.
+
+Licensed under the GNU General Public License v2.0 or later
+(GPL-2.0-or-later, matching both upstream projects) — see [`LICENSE`](LICENSE).
+The patches under `src/patches/` carry this copyright and SPDX identifier in
+their header; the new BlueZ files (`profiles/input/procon.{c,h}`) carry them as
+SPDX file headers. The kernel file is upstream `hid-nintendo.c` and keeps its
+upstream header.

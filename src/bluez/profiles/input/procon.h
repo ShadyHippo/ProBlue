@@ -27,6 +27,11 @@
  *  The shared cable-pairing infrastructure (CablePairingType, struct
  *  cable_pairing, the PlayStation device table) lives in sixaxis.h; everything
  *  Nintendo-specific lives here.
+ *
+ *  Protocol sources: dekuNukem's Nintendo_Switch_Reverse_Engineering
+ *  (bluetooth_hid_subcommands_notes.md, spi_flash_notes.md, USB-HID-Notes.md),
+ *  the nxbt "Example Pairing Session" capture (Brikwerk), and the upstream
+ *  hid-nintendo driver for the wired frame layout.
  */
 
 #ifndef _PROCON_H_

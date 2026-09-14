@@ -14,6 +14,9 @@
  *  for the duration of one command round-trip. The controller normally answers
  *  within milliseconds; the timeout is only a safety net against a dead or
  *  unresponsive controller.
+ *
+ *  Protocol sources: dekuNukem's Nintendo_Switch_Reverse_Engineering notes and
+ *  the nxbt "Example Pairing Session" capture (Brikwerk).
  */
 
 #ifdef HAVE_CONFIG_H
