@@ -50,6 +50,7 @@ struct authentication_closure {
 	int fd;
 	bdaddr_t bdaddr; /* device bdaddr */
 	CablePairingType type;
+	bool existing; /* device record pre-existed; never remove it */
 };
 
 struct authentication_destroy_closure {
@@ -281,7 +282,9 @@ static void agent_auth_cb(DBusError *derr, void *user_data)
 	char central_addr[18], adapter_addr[18], device_addr[18];
 	bdaddr_t central_bdaddr;
 	const bdaddr_t *adapter_bdaddr;
-	bool remove_device = true;
+	/* Only remove a device created in this flow; a pre-existing record (a
+	 * known controller being re-paired) must survive a failed repair. */
+	bool remove_device = !closure->existing;
 
 	if (!is_auth_pending(closure))
 		return;
@@ -383,6 +386,7 @@ static bool setup_device(int fd, const char *sysfs_path,
 	const bdaddr_t *adapter_bdaddr;
 	struct btd_device *device;
 	struct authentication_closure *closure;
+	bool existing;
 
 	/* procon: start the wired UART session before any subcommand —
 	 * hid-nintendo's passive probe never starts it. */
@@ -407,20 +411,29 @@ static bool setup_device(int fd, const char *sysfs_path,
 		btd_adapter_set_connectable(adapter, true);
 	}
 
-	/* This can happen if controller was plugged while already setup and
-	 * connected eg. to charge up battery. The Pro Controller is exempt
-	 * unless it is connected right now: read-then-decide makes a re-dock a
-	 * no-op (it just verified the key), so nothing to skip here. */
+	/*
+	 * A controller that is connected to us right now needs nothing: it is
+	 * already running on the stored key. Anything else is re-checked over
+	 * USB. That matters for the Pro Controller in particular: its flash has
+	 * a single pairing slot, so another host may have replaced our record
+	 * since the last dock. read-then-decide reuses the key when it is still
+	 * ours and runs the 3-step when it is not, so a trusted-but-idle Pro
+	 * Controller must not be skipped (Sony controllers keep the old
+	 * trusted-skip behaviour).
+	 */
 	device = btd_adapter_find_device(adapter, &device_bdaddr,
 							BDADDR_BREDR);
 	if (device && btd_device_has_uuid(device, HID_UUID) &&
 			(btd_device_is_connected(device) ||
-			 btd_device_is_trusted(device))) {
+			 (cp->type != CABLE_PAIRING_PROCON &&
+			  btd_device_is_trusted(device)))) {
 		char device_addr[18];
 		ba2str(&device_bdaddr, device_addr);
 		DBG("device %s already known, skipping", device_addr);
 		return false;
 	}
+
+	existing = device != NULL;
 
 	device = btd_adapter_get_device(adapter, &device_bdaddr, BDADDR_BREDR);
 
@@ -429,11 +442,16 @@ static bool setup_device(int fd, const char *sysfs_path,
 		return false;
 	}
 
-	info("sixaxis: setting up new device");
+	info("sixaxis: %s device",
+			existing ? "re-checking known" : "setting up new");
 
 	btd_device_device_set_name(device, cp->name);
 	btd_device_set_pnpid(device, cp->source, cp->vid, cp->pid, cp->version);
-	btd_device_set_temporary(device, true);
+
+	/* A record we already have stays permanent: if the repair fails, the
+	 * user's pairing must survive (see remove_device in agent_auth_cb). */
+	if (!existing)
+		btd_device_set_temporary(device, true);
 
 	/*
 	 * Physical access to the cable is the authorization, so trust the
@@ -445,7 +463,8 @@ static bool setup_device(int fd, const char *sysfs_path,
 
 	closure = g_new0(struct authentication_closure, 1);
 	if (!closure) {
-		btd_adapter_remove_device(adapter, device);
+		if (!existing)
+			btd_adapter_remove_device(adapter, device);
 		return false;
 	}
 	closure->adapter = adapter;
@@ -454,6 +473,7 @@ static bool setup_device(int fd, const char *sysfs_path,
 	closure->fd = fd;
 	bacpy(&closure->bdaddr, &device_bdaddr);
 	closure->type = cp->type;
+	closure->existing = existing;
 	adapter_bdaddr = btd_adapter_get_address(adapter);
 	closure->auth_id = btd_request_authorization_cable_configured(
 					adapter_bdaddr, &device_bdaddr,
@@ -461,7 +481,7 @@ static bool setup_device(int fd, const char *sysfs_path,
 
 	if (closure->auth_id == 0) {
 		error("sixaxis: could not request cable authorization");
-		auth_closure_destroy(closure, true);
+		auth_closure_destroy(closure, !existing);
 		return false;
 	}
 
@@ -555,7 +575,8 @@ static void device_removed(struct udev_device *udevice)
 		return;
 
 	g_hash_table_steal(pending_auths, sysfs_path);
-	auth_closure_destroy(closure, true);
+	/* Unplug during the handshake: a pre-existing pairing survives. */
+	auth_closure_destroy(closure, !closure->existing);
 }
 
 static gboolean monitor_watch(GIOChannel *source, GIOCondition condition,

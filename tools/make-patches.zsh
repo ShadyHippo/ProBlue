@@ -29,6 +29,26 @@ trap 'rm -rf "$WORK"' EXIT
 
 mkdir -p "$OUT"
 
+# `diff -ruN` puts file mtimes in the ---/+++ headers. Those are useful in a
+# patch that really changed, so a generated patch keeps them; they are ignored
+# only when deciding whether a patch changed at all.
+strip_dates() {
+  sed -E 's/^((---|\+\+\+) [^\t]*)\t[0-9]{4}-[0-9]{2}-[0-9]{2} .*/\1/' "$1"
+}
+
+install_patch() {  # $1 = generated patch, $2 = final path
+  # If the code side is identical, leave the existing file byte-for-byte alone:
+  # no spurious diff, and an unchanged kernel patch can't force a rebuild.
+  # Otherwise write the generated patch as-is, timestamps included.
+  if [[ -f "$2" ]] && diff -q <(strip_dates "$1") <(strip_dates "$2") >/dev/null; then
+    print "unchanged: $2"
+    rm -f "$1"
+  else
+    mv "$1" "$2"
+    print "wrote:     $2"
+  fi
+}
+
 KERNEL_HDR='# ProBlue - hid-nintendo USB passivity (kernel 6.18.46)
 #
 # On the USB transport only, hid-nintendo binds and exposes hidraw but sends
@@ -92,7 +112,8 @@ done
 {
   print -r -- "$BLUEZ_HDR"
   (cd "$WORK/bluez" && diff -ruN a b) || true
-} > "$OUT/bluez-procon-cable-pairing-5.86.patch"
+} > "$WORK/bluez.patch"
+install_patch "$WORK/bluez.patch" "$OUT/bluez-procon-cable-pairing-5.86.patch"
 
 # --- kernel ------------------------------------------------------------------
 # Upstream layout (drivers/hid/hid-nintendo.c) so the patch applies with -p1 at
@@ -103,8 +124,7 @@ cp "$SRC/kernel/drivers/hid/hid-nintendo.c"  "$WORK/kernel/b/drivers/hid/hid-nin
 {
   print -r -- "$KERNEL_HDR"
   (cd "$WORK/kernel" && diff -ruN a b) || true
-} > "$OUT/kernel-hid-nintendo-usb-passive-6.18.46.patch"
+} > "$WORK/kernel.patch"
+install_patch "$WORK/kernel.patch" "$OUT/kernel-hid-nintendo-usb-passive-6.18.46.patch"
 
-print "wrote:"
-print "  $OUT/bluez-procon-cable-pairing-5.86.patch"
-print "  $OUT/kernel-hid-nintendo-usb-passive-6.18.46.patch"
+print "done"
