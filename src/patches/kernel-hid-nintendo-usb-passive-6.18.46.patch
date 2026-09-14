@@ -1,6 +1,6 @@
 diff -ruN a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
---- a/drivers/hid/hid-nintendo.c	2026-09-13 13:02:44.334161172 -0400
-+++ b/drivers/hid/hid-nintendo.c	2026-09-13 13:02:44.338072144 -0400
+--- a/drivers/hid/hid-nintendo.c	2026-09-13 17:01:00.045797731 -0400
++++ b/drivers/hid/hid-nintendo.c	2026-09-13 17:01:00.048647937 -0400
 @@ -771,6 +771,18 @@
  	return ctlr->hdev->bus == BUS_USB;
  }

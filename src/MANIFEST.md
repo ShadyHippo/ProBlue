@@ -12,10 +12,9 @@
 
 ## Regenerate / upgrade
 
-The reviewed artifacts live in `V2/src/`: the full patched files
+The reviewed artifacts live in `src/`: the full patched files
 (`src/kernel/`, `src/bluez/`) and the generated patches
 (`src/patches/`). After a system upgrade, re-run
-`tools/fetch-pristine.zsh --force` to refresh `V2/build/pristine/`,
-then diff/regenerate with `tools/make-patches.zsh` (see docs/KEY_CONTEXT.md
-§5). Kernel anchor renamed in 6.18: `joycon_hid_resume` →
-`nintendo_hid_resume`.
+`tools/fetch-pristine.zsh --force` to refresh `build/pristine/`,
+then diff/regenerate with `tools/make-patches.zsh` (see README.md). Kernel
+anchor renamed in 6.18: `joycon_hid_resume` → `nintendo_hid_resume`.

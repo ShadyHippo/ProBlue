@@ -1,6 +1,6 @@
 diff -ruN a/Makefile.plugins b/Makefile.plugins
---- a/Makefile.plugins	2026-09-13 13:02:44.187329861 -0400
-+++ b/Makefile.plugins	2026-09-13 13:02:44.194656615 -0400
+--- a/Makefile.plugins	2026-09-13 17:00:59.940206768 -0400
++++ b/Makefile.plugins	2026-09-13 17:00:59.944826602 -0400
 @@ -93,7 +93,8 @@
  
  if SIXAXIS
@@ -12,8 +12,8 @@ diff -ruN a/Makefile.plugins b/Makefile.plugins
  endif
  
 diff -ruN a/plugins/sixaxis.c b/plugins/sixaxis.c
---- a/plugins/sixaxis.c	2026-09-13 13:02:44.209376178 -0400
-+++ b/plugins/sixaxis.c	2026-09-13 13:02:44.217665442 -0400
+--- a/plugins/sixaxis.c	2026-09-13 17:00:59.953284268 -0400
++++ b/plugins/sixaxis.c	2026-09-13 17:00:59.957444779 -0400
 @@ -27,9 +27,12 @@
  #include <libudev.h>
  
@@ -204,7 +204,7 @@ diff -ruN a/plugins/sixaxis.c b/plugins/sixaxis.c
  	}
 diff -ruN a/profiles/input/procon.c b/profiles/input/procon.c
 --- a/profiles/input/procon.c	1969-12-31 19:00:00.000000000 -0500
-+++ b/profiles/input/procon.c	2026-09-13 13:02:44.232441388 -0400
++++ b/profiles/input/procon.c	2026-09-13 17:00:59.966257884 -0400
 @@ -0,0 +1,370 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later
 +/*
@@ -579,8 +579,8 @@ diff -ruN a/profiles/input/procon.c b/profiles/input/procon.c
 \ No newline at end of file
 diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
 --- a/profiles/input/procon.h	1969-12-31 19:00:00.000000000 -0500
-+++ b/profiles/input/procon.h	2026-09-13 13:02:44.247084082 -0400
-@@ -0,0 +1,117 @@
++++ b/profiles/input/procon.h	2026-09-13 17:00:59.974514396 -0400
+@@ -0,0 +1,119 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +/*
 + *  BlueZ - Bluetooth protocol stack for Linux
@@ -682,8 +682,10 @@ diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
 +							const char *name);
 +
 +/* The controller's HID service record, captured verbatim from bluetoothd's
-+ * SDP cache during a genuine pairing (V1 docs/golden/procon_sdp_cache). P7:
-+ * try a real SDP browse on 5.86 before relying on this. */
++ * SDP cache during a genuine pairing of a retail Pro Controller. It is a
++ * property of the controller's firmware and identical across units (no
++ * machine- or key-specific data). P7: verify with a real SDP browse on 5.86
++ * before relying on it. */
 +#define PROCON_HID_SDP_RECORD "36017D0900000A000100000900013503191124090004"\
 +	"350D350619010009001135031900110900053503191002090006350909656E09006A09"\
 +	"01000900093508350619112409010109000D350F350D35061901000900133503190011"\
@@ -700,8 +702,8 @@ diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
 +#endif /* _PROCON_H_ */
 \ No newline at end of file
 diff -ruN a/profiles/input/server.c b/profiles/input/server.c
---- a/profiles/input/server.c	2026-09-13 13:02:44.261259442 -0400
-+++ b/profiles/input/server.c	2026-09-13 13:02:44.268844789 -0400
+--- a/profiles/input/server.c	2026-09-13 17:00:59.983830151 -0400
++++ b/profiles/input/server.c	2026-09-13 17:00:59.988986011 -0400
 @@ -31,6 +31,7 @@
  #include "src/profile.h"
  
@@ -762,8 +764,8 @@ diff -ruN a/profiles/input/server.c b/profiles/input/server.c
  		goto drop;
  	}
 diff -ruN a/profiles/input/sixaxis.h b/profiles/input/sixaxis.h
---- a/profiles/input/sixaxis.h	2026-09-13 13:02:44.283030708 -0400
-+++ b/profiles/input/sixaxis.h	2026-09-13 13:02:44.288784813 -0400
+--- a/profiles/input/sixaxis.h	2026-09-13 17:00:59.997455485 -0400
++++ b/profiles/input/sixaxis.h	2026-09-13 17:01:00.001942218 -0400
 @@ -13,10 +13,18 @@
  #ifndef _SIXAXIS_H_
  #define _SIXAXIS_H_
@@ -784,8 +786,8 @@ diff -ruN a/profiles/input/sixaxis.h b/profiles/input/sixaxis.h
  
  struct cable_pairing {
 diff -ruN a/src/adapter.c b/src/adapter.c
---- a/src/adapter.c	2026-09-13 13:02:44.297399923 -0400
-+++ b/src/adapter.c	2026-09-13 13:02:44.301607454 -0400
+--- a/src/adapter.c	2026-09-13 17:01:00.010469584 -0400
++++ b/src/adapter.c	2026-09-13 17:01:00.014849360 -0400
 @@ -5889,6 +5889,29 @@
  
  	DBG("adapter %s has been enabled", adapter->path);
@@ -924,8 +926,8 @@ diff -ruN a/src/adapter.c b/src/adapter.c
  					const void *param, void *user_data)
  {
 diff -ruN a/src/adapter.h b/src/adapter.h
---- a/src/adapter.h	2026-09-13 13:02:44.309560378 -0400
-+++ b/src/adapter.h	2026-09-13 13:02:44.313558761 -0400
+--- a/src/adapter.h	2026-09-13 17:01:00.023454080 -0400
++++ b/src/adapter.h	2026-09-13 17:01:00.027424010 -0400
 @@ -78,6 +78,9 @@
  const char *btd_adapter_get_name(struct btd_adapter *adapter);
  void btd_adapter_remove_device(struct btd_adapter *adapter,

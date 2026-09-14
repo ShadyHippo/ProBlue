@@ -7,7 +7,7 @@
 # scan flags, actual controller scan state, or RX delivery.
 #
 # Usage:  sudo tools/wedge-probe.sh
-# Output: V2/logs/wedge-probe-<ts>.txt  (gitignored) + terminal echo.
+# Output: logs/wedge-probe-<ts>.txt  (gitignored) + terminal echo.
 
 set -u
 OUT_DIR="$(dirname "$0")/../logs"

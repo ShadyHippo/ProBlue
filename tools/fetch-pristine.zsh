@@ -5,11 +5,11 @@
 # default) and materializes the pristine sources from the same rev the Nix
 # store used to build them:
 #
-#   V2/build/pristine/bluez/                          — pristine BlueZ tree (e.g. 5.86)
-#   V2/build/pristine/kernel/drivers/hid/hid-nintendo.c — pristine driver for the running kernel
-#   V2/src/MANIFEST.md                                — pin record (rev, version, store path, URL)
+#   build/pristine/bluez/                          — pristine BlueZ tree (e.g. 5.86)
+#   build/pristine/kernel/drivers/hid/hid-nintendo.c — pristine driver for the running kernel
+#   src/MANIFEST.md                                — pin record (rev, version, store path, URL)
 #
-# The reviewed artifacts (full patched files + patches) live under V2/src/ and
+# The reviewed artifacts (full patched files + patches) live under src/ and
 # are tracked; the pristine trees here are throwaway reference for diffing and
 # rebuilding, which is why they are gitignored.
 #
@@ -18,7 +18,7 @@
 # guesswork; the store path is content-addressed from the pinned rev.
 #
 # Usage:
-#   tools/fetch-pristine.zsh           # fetch if V2/src is empty
+#   tools/fetch-pristine.zsh           # fetch if src/ is empty
 #   tools/fetch-pristine.zsh --force   # overwrite existing trees (DESTROYS EDITS!)
 #   NIXOS_CONFIG=/path tools/fetch-pristine.zsh
 #
@@ -117,12 +117,12 @@ tar -xf "$KTAR" -C "$KERNEL_DIR" --wildcards '*/drivers/hid/hid-nintendo.c' --st
   print
   print "## Regenerate / upgrade"
   print
-  print "The reviewed artifacts live in \`V2/src/\`: the full patched files"
+  print "The reviewed artifacts live in \`src/\`: the full patched files"
   print "(\`src/kernel/\`, \`src/bluez/\`) and the generated patches"
   print "(\`src/patches/\`). After a system upgrade, re-run"
-  print "\`tools/fetch-pristine.zsh --force\` to refresh \`V2/build/pristine/\`,"
-  print "then diff/regenerate with \`tools/make-patches.zsh\` (see docs/KEY_CONTEXT.md"
-  print "§5). Kernel anchor renamed in 6.18: \`joycon_hid_resume\` →"
+  print "\`tools/fetch-pristine.zsh --force\` to refresh \`build/pristine/\`,"
+  print "then diff/regenerate with \`tools/make-patches.zsh\` (see README.md)."
+  print "Kernel anchor renamed in 6.18: \`joycon_hid_resume\` →"
   print "\`nintendo_hid_resume\`."
 } > "$MANIFEST"
 
