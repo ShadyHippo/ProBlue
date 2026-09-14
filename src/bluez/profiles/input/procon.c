@@ -166,10 +166,64 @@ static int procon_usb_cmd(int fd, uint8_t cmd)
 	}
 }
 
+/* USB command 0x01 (connection status): "who are you, and are you connected?".
+ *
+ * This is a plain query answered by the controller's own USB bridge. Unlike
+ * 0x02 it starts no UART session, so it is safe to send to a controller that is
+ * already connected over Bluetooth — which is the whole point: starting the
+ * session makes the controller commit to USB and tear down an established
+ * Bluetooth link, whereas 0x01 leaves it alone.
+ *
+ * Reply: [0] 0x81, [1] 0x01, [2] status, [3] controller type, [4..9] the
+ * controller's own address in wire order — i.e. already in bdaddr_t order, so
+ * it is copied rather than swapped (the subcmd 0x02 reply differs: it stores
+ * the address in display order and needs a baswap). The address is the
+ * controller's, not the host's, so it identifies which device this is.
+ *
+ * Returns 0 with @bdaddr filled, or a negative errno. A controller that does
+ * not answer (no reply) is not an error worth failing the plug-in over; the
+ * caller falls back to the session path. */
+int procon_get_conn_status(int fd, bdaddr_t *bdaddr)
+{
+	uint8_t pkt[2] = { PROCON_USB_REPORT_CMD, PROCON_USB_CMD_CONN_STATUS };
+	uint8_t reply[64];
+	int ret;
+
+	if (write(fd, pkt, sizeof(pkt)) < 0)
+		return -errno;
+
+	for (;;) {
+		ret = procon_wait_reply(fd, reply);
+		if (ret < 0)
+			return ret;
+		if (ret == 0) {
+			error("procon: usb 0x80 0x%02x: no reply",
+						PROCON_USB_CMD_CONN_STATUS);
+			return -ETIMEDOUT;
+		}
+		if (ret >= 10 && reply[0] == PROCON_USB_REPORT_ACK &&
+					reply[1] == PROCON_USB_CMD_CONN_STATUS)
+			break;
+		/* anything else is a stray report; keep waiting */
+	}
+
+	if (reply[3] != PROCON_TYPE_PRO) {
+		error("procon: usb 0x80 0x%02x: unexpected controller type 0x%02x",
+						PROCON_USB_CMD_CONN_STATUS, reply[3]);
+		return -ENODEV;
+	}
+
+	bacpy(bdaddr, (bdaddr_t *)(reply + 4));
+	return 0;
+}
+
 /* Start the wired UART session with the controller's Bluetooth chip: 0x02,
  * 0x03 (3 Mbit), then 0x02 again to make the baud switch take effect. No
  * subcommand is answered before this has run (the passive hid-nintendo probe
- * never starts the session itself). */
+ * never starts the session itself).
+ *
+ * Only run this on a controller that is *not* already connected: 0x02 makes
+ * the controller commit to USB and terminate an established Bluetooth link. */
 int procon_usb_session_init(int fd)
 {
 	int ret;

@@ -388,11 +388,47 @@ static bool setup_device(int fd, const char *sysfs_path,
 	struct authentication_closure *closure;
 	bool existing;
 
-	/* procon: start the wired UART session before any subcommand —
-	 * hid-nintendo's passive probe never starts it. */
-	if (cp->type == CABLE_PAIRING_PROCON &&
-				procon_usb_session_init(fd) < 0)
-		return false;
+	if (cp->type == CABLE_PAIRING_PROCON) {
+		bdaddr_t conn_bdaddr;
+
+		/*
+		 * Find out which controller this is before touching the wired
+		 * session. USB command 0x01 is a plain status query: it returns
+		 * the controller's address without starting the UART session,
+		 * so a controller that is already connected over Bluetooth
+		 * keeps its link. Starting the session instead (0x02/0x03/0x02)
+		 * makes the controller commit to USB and terminate that link,
+		 * which is what used to happen when a working controller was
+		 * plugged in to charge.
+		 *
+		 * A controller that does not answer the query falls through to
+		 * the session below, exactly as before.
+		 */
+		if (procon_get_conn_status(fd, &conn_bdaddr) == 0) {
+			struct btd_device *conn_device;
+
+			conn_device = btd_adapter_find_device(adapter,
+						&conn_bdaddr, BDADDR_BREDR);
+			if (conn_device &&
+				btd_device_has_uuid(conn_device, HID_UUID) &&
+				btd_device_is_connected(conn_device)) {
+				char conn_addr[18];
+
+				ba2str(&conn_bdaddr, conn_addr);
+				info("procon: %s is connected over Bluetooth, "
+					"leaving it alone", conn_addr);
+				return false;
+			}
+		}
+
+		/*
+		 * The controller is not connected, so the wired session is
+		 * safe: there is no Bluetooth link left to lose. hid-nintendo's
+		 * passive probe never starts it itself.
+		 */
+		if (procon_usb_session_init(fd) < 0)
+			return false;
+	}
 
 	/* Console order: device info first, then the wired arm. */
 	if (get_device_bdaddr(fd, &device_bdaddr, cp->type) < 0)

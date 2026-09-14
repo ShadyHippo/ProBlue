@@ -11,6 +11,8 @@
  *  through the wired 3-step protocol (subcmd 0x01), so pairing on Linux means
  *  driving the controller over its USB hidraw node:
  *
+ *    0. ask who the controller is (0x80 01) and stop there if it is
+ *       already connected to us (see procon_get_conn_status),
  *    1. start the wired UART session (0x80 02, 0x03, 0x02),
  *    2. read the controller's address (subcmd 0x02, device info),
  *    3. run the 3-step (host address, GET_LTK, save),
@@ -65,8 +67,12 @@
 /* Wired session commands: 2-byte writes [0x80][cmd], answered by [0x81][cmd]. */
 #define PROCON_USB_REPORT_CMD	0x80
 #define PROCON_USB_REPORT_ACK	0x81
+#define PROCON_USB_CMD_CONN_STATUS	0x01	/* who am I; starts no session */
 #define PROCON_USB_CMD_HANDSHAKE	0x02	/* (re)start the UART session */
 #define PROCON_USB_CMD_BAUDRATE_3M	0x03	/* switch the session to 3 Mbit */
+
+/* Controller type byte of the 0x80 0x01 reply (USB-HID notes). */
+#define PROCON_TYPE_PRO		0x03
 
 /* Subcommands handled here; all other Pro Controller subcommands belong to
  * hid-nintendo and must not be sent by a second writer. */
@@ -92,6 +98,7 @@
 #define PROCON_SPI_MAC_OFFSET	0x04	/* 6B host MAC, big-endian */
 #define PROCON_SPI_LTK_OFFSET	0x0a	/* 16B LTK, little-endian */
 
+int procon_get_conn_status(int fd, bdaddr_t *bdaddr);
 int procon_usb_session_init(int fd);
 int procon_arm_wired(int fd);
 int procon_get_device_bdaddr(int fd, bdaddr_t *bdaddr);

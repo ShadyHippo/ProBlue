@@ -60,7 +60,11 @@ The `sixaxis` input plugin (which already handles USB cable pairing for Sony
 controllers) grows a Nintendo Pro Controller path. When the controller is
 plugged in it:
 
-- opens the controller's `hidraw` and runs the BT-side UART session
+- asks who the controller is with USB command `0x80 01` (a plain status query
+  that returns the controller's address and opens no session) and **stops there
+  if that controller is already connected over Bluetooth** — starting the
+  session would make it drop the link,
+- otherwise opens the controller's `hidraw` and runs the BT-side UART session
   (`0x80 02/03/02`),
 - reads the controller's identity (`0x02` device info) and current pairing
   record (SPI `x2000` via `0x10`, with `0x05` as the "is a host stored?" probe),
@@ -88,6 +92,13 @@ for the wired side, and the kernel patch for the passivity. The shape is:
 - **UART session.** Two-byte writes `0x80 02` (handshake), `0x80 03` (3 Mbit),
   `0x80 02` again (re-handshake), answered by `0x81 <cmd>`. Subcommands are not
   answered until this session is open, and the passive kernel never opens it.
+- **Not disturbing a live link.** `0x80 02` makes the controller commit to USB
+  and terminate an established Bluetooth connection, so it must never be sent to
+  a controller that is already connected. `0x80 01` answers with the
+  controller's own address *without* opening a session, which is what lets the
+  plug-in path recognise "this is my connected controller, leave it alone" —
+  plugging a working controller in to charge no longer drops it. A controller
+  that does not answer falls back to the session path.
 - **Stored pairing.** The controller keeps one host record in SPI flash at
   `x2000`: magic `0x95`, host MAC big-endian, 128-bit LTK little-endian, and a
   host-capability byte (`0x68` Switch / `0x08` PC). **Read-then-decide** reads it
