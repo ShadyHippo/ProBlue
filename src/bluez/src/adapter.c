@@ -5894,11 +5894,13 @@ static void adapter_start(struct btd_adapter *adapter)
 	 * re-adds a device at the temporary→non-temporary bonding transition
 	 * (device.c:6880). Re-add bonded BR/EDR devices on every power-on so
 	 * the `disconnected_accept_list_entries` page-scan path stays
-	 * populated. This is NOT the reconnect-wedge fix (see
-	 * docs/hardware/intel-9260-reconnect-wedge.md); it only keeps the
-	 * accept list consistent with the bonded device set. Harmless if the
-	 * entry is already present (the kernel rejects the duplicate; the
-	 * error log is cosmetic).
+	 * populated.
+	 *
+	 * It is not the reconnect fix: measured traces showed page scan was
+	 * already on and zero Connect Requests reached HCI during a failure, so
+	 * this only keeps the accept list consistent with the bonded device
+	 * set. Harmless if the entry is already present (the kernel rejects the
+	 * duplicate; the error log is cosmetic).
 	 */
 	if (btd_has_kernel_features(KERNEL_CONN_CONTROL)) {
 		GSList *l;

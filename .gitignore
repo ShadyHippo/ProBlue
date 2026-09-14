@@ -1,11 +1,8 @@
-cont?maki.sh
-.maki/
-dev_tools/results/
-
-# Raw measurement logs (gitignored).
+# Raw measurement logs.
 logs/*
 
-# Vendored third-party reference material (RE notes, nxbt). Read-only, local only.
+# Vendored third-party reference material (RE notes, nxbt). Read-only, local
+# only — not redistributed with this project.
 external_docs/
 
 # Pristine upstream trees, materialized by tools/fetch-pristine.zsh for

@@ -772,11 +772,11 @@ static inline bool joycon_using_usb(struct joycon_ctlr *ctlr)
 }
 
 /*
- * ProBlue fork: only the USB transport is passive. bluetoothd's procon
- * plugin drives the wired side over the USB hidraw (session handshake,
- * pairing subcommands), so the driver must not write to that hidraw at all.
- * BT is 100% stock: full init + input + leds/battery, parsing the 0x30
- * reports into the real /dev/input device.
+ * Only the USB transport is passive. Userspace drives the wired side over
+ * the USB hidraw (the UART session handshake and the pairing subcommands),
+ * so the driver must not write to that hidraw at all. Bluetooth is
+ * untouched: full init, input, leds and battery, parsing the 0x30 reports
+ * into the real /dev/input device.
  */
 static inline bool joycon_is_passive(struct joycon_ctlr *ctlr)
 {
@@ -2463,15 +2463,16 @@ static int joycon_init(struct hid_device *hdev)
 
 	mutex_lock(&ctlr->output_mutex);
 	/*
-	 * ProBlue fork: only the USB transport is passive. The wired UART
-	 * session (the 0x80 02/03/02 handshake and the "pin to USB" 0x80 04
-	 * command) and the pairing subcommands belong to bluetoothd's procon
-	 * plugin, which drives this same hidraw; the driver must not write to
-	 * it. On USB nothing is sent and no input/led/battery device is created
-	 * (see nintendo_hid_probe). Bluetooth below is stock.
+	 * On USB, leave the controller alone: the UART session (the
+	 * 0x80 02/03/02 handshake and the "pin to USB" 0x80 04 command) and
+	 * the pairing subcommands are driven from userspace over this same
+	 * hidraw, and sending them here would both fight userspace and pin the
+	 * controller to USB so it could not revert to Bluetooth. No
+	 * input/led/battery device is created for USB instances either (see
+	 * nintendo_hid_probe).
 	 */
 	if (joycon_is_passive(ctlr)) {
-		hid_info(hdev, "passive probe (ProBlue fork): hidraw only\n");
+		hid_dbg(hdev, "passive USB controller; hidraw only\n");
 		goto out_unlock;
 	}
 
@@ -2673,11 +2674,10 @@ static int nintendo_hid_probe(struct hid_device *hdev,
 	}
 
 	/*
-	 * ProBlue fork: USB instances stay passive — no leds, no battery, no
-	 * input device. The wire never carries input (Switch parity); the
-	 * pairing plugin owns the hidraw. ctlr_state stays INIT so incoming
-	 * reports are ignored (ctlr->input is NULL). BT falls through to the
-	 * stock probe below.
+	 * USB instances stay passive: no leds, no battery, no input device.
+	 * The wire never carries input (console parity) and userspace owns the
+	 * hidraw. ctlr_state stays INIT so incoming reports are ignored
+	 * (ctlr->input is NULL).
 	 */
 	if (joycon_is_passive(ctlr)) {
 		hid_dbg(hdev, "probe - success (passive)\n");
@@ -2751,9 +2751,9 @@ static int nintendo_hid_resume(struct hid_device *hdev)
 	hid_dbg(hdev, "resume\n");
 	if (joycon_is_passive(ctlr)) {
 		/*
-		 * ProBlue fork: passive (USB) controllers have no input device;
-		 * flipping ctlr_state to READ would make the event handler parse
-		 * reports against a NULL input device. Send nothing instead.
+		 * Passive (USB) controllers have no input device; flipping
+		 * ctlr_state to READ would make the event handler parse reports
+		 * against a NULL input device.
 		 */
 		hid_dbg(hdev, "no-op resume for passive ctlr\n");
 		return 0;

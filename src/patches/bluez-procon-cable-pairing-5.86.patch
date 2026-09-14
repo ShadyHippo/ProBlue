@@ -20,8 +20,8 @@
 # the nxbt "Example Pairing Session" capture (Brikwerk).
 
 diff -ruN a/Makefile.plugins b/Makefile.plugins
---- a/Makefile.plugins	2026-09-14 12:48:43.784046908 -0400
-+++ b/Makefile.plugins	2026-09-14 12:48:43.786365024 -0400
+--- a/Makefile.plugins	2026-09-14 14:00:40.191885763 -0400
++++ b/Makefile.plugins	2026-09-14 14:00:40.196610102 -0400
 @@ -93,7 +93,8 @@
  
  if SIXAXIS
@@ -33,8 +33,8 @@ diff -ruN a/Makefile.plugins b/Makefile.plugins
  endif
  
 diff -ruN a/plugins/sixaxis.c b/plugins/sixaxis.c
---- a/plugins/sixaxis.c	2026-09-14 12:48:43.790971183 -0400
-+++ b/plugins/sixaxis.c	2026-09-14 12:48:43.793252664 -0400
+--- a/plugins/sixaxis.c	2026-09-14 14:00:40.204205371 -0400
++++ b/plugins/sixaxis.c	2026-09-14 14:00:40.208025218 -0400
 @@ -27,9 +27,12 @@
  #include <libudev.h>
  
@@ -349,7 +349,7 @@ diff -ruN a/plugins/sixaxis.c b/plugins/sixaxis.c
  static gboolean monitor_watch(GIOChannel *source, GIOCondition condition,
 diff -ruN a/profiles/input/procon.c b/profiles/input/procon.c
 --- a/profiles/input/procon.c	1969-12-31 19:00:00.000000000 -0500
-+++ b/profiles/input/procon.c	2026-09-14 12:48:43.798114433 -0400
++++ b/profiles/input/procon.c	2026-09-14 14:00:40.215594711 -0400
 @@ -0,0 +1,427 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later
 +/*
@@ -360,8 +360,8 @@ diff -ruN a/profiles/input/procon.c b/profiles/input/procon.c
 + *  Nintendo Switch Pro Controller wired pairing protocol.
 + *
 + *  Every command here runs over the hidraw node that hid-nintendo creates when
-+ *  the controller is plugged in. The driver is passive on USB (see the ProBlue
-+ *  hid-nintendo patch), which makes bluetoothd the only writer on that node.
++ *  the controller is plugged in. The driver is passive on USB (it sends nothing
++ *  on that transport), which makes bluetoothd the only writer on that node.
 + *
 + *  These calls are synchronous and run from the udev plugin context: they block
 + *  for the duration of one command round-trip. The controller normally answers
@@ -668,7 +668,7 @@ diff -ruN a/profiles/input/procon.c b/profiles/input/procon.c
 +}
 +
 +/* Flash copy of the LTK is little-endian (x200A); as a BR/EDR link key it
-+ * must be byte-reversed (KEY_CONTEXT §3.6). */
++ * must be byte-reversed. */
 +static void procon_flash_ltk_to_bredr(const uint8_t flash[16],
 +					uint8_t ltk[16])
 +{
@@ -678,7 +678,7 @@ diff -ruN a/profiles/input/procon.c b/profiles/input/procon.c
 +		ltk[i] = flash[15 - i];
 +}
 +
-+/* Read-then-decide (PLAN P8 replacement): acquire the BR/EDR link key from a
++/* Read-then-decide: acquire the BR/EDR link key from a
 + * wired Pro Controller. If the active x2000 section has magic 0x95 and the
 + * stored host MAC == @host, the controller is already paired to us — skip
 + * the 3-step and read the key straight from flash. Otherwise run the full
@@ -781,7 +781,7 @@ diff -ruN a/profiles/input/procon.c b/profiles/input/procon.c
 \ No newline at end of file
 diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
 --- a/profiles/input/procon.h	1969-12-31 19:00:00.000000000 -0500
-+++ b/profiles/input/procon.h	2026-09-14 12:48:43.802759639 -0400
++++ b/profiles/input/procon.h	2026-09-14 14:00:40.222815906 -0400
 @@ -0,0 +1,131 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +/*
@@ -809,7 +809,7 @@ diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
 + *  SPI flash notes: "it keeps the active section and the current LTK used
 + *  with Switch can be acquired") — no fresh-key generation. So an already
 + *  paired controller does not need the 3-step at all: read x2000 (0x10) and
-+ *  skip if magic 0x95 + stored MAC == ours (read-then-decide, PLAN P8).
++ *  skip if magic 0x95 + stored MAC == ours (read-then-decide).
 + *
 + *  The shared cable-pairing infrastructure (CablePairingType, struct
 + *  cable_pairing, the PlayStation device table) lives in sixaxis.h; everything
@@ -874,7 +874,7 @@ diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
 +
 +/* subcmd 0x08 00 clears the shipment low-power state (SPI x5000). On this
 + * unit x5000 already reads 0xFF (shipment-normal); the wired arm at dock is
-+ * therefore a no-op kept for console-order parity (ledger R4). */
++ * therefore a no-op kept for console-order parity. */
 +#define PROCON_SHIPMENT_CLEAR	0x00
 +
 +/* x2000 pairing-info section layout (SPI flash notes, stride 0x26). */
@@ -895,11 +895,11 @@ diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
 +const struct cable_pairing *get_nintendo_pairing(uint16_t vid, uint16_t pid,
 +							const char *name);
 +
-+/* The controller's HID service record, captured verbatim from bluetoothd's
-+ * SDP cache during a genuine pairing of a retail Pro Controller. It is a
-+ * property of the controller's firmware and identical across units (no
-+ * machine- or key-specific data). P7: verify with a real SDP browse on 5.86
-+ * before relying on it. */
++/* The controller's HID service record, mirroring SIXAXIS_HID_SDP_RECORD on the
++ * Sony path: captured verbatim from bluetoothd's SDP cache during a genuine
++ * pairing of a retail Pro Controller. It is a property of the controller's
++ * firmware and identical across units (no machine- or key-specific data), so
++ * the device can be marked Paired+Bonded without a live SDP browse. */
 +#define PROCON_HID_SDP_RECORD "36017D0900000A000100000900013503191124090004"\
 +	"350D350619010009001135031900110900053503191002090006350909656E09006A09"\
 +	"01000900093508350619112409010109000D350F350D35061901000900133503190011"\
@@ -916,8 +916,8 @@ diff -ruN a/profiles/input/procon.h b/profiles/input/procon.h
 +#endif /* _PROCON_H_ */
 \ No newline at end of file
 diff -ruN a/profiles/input/server.c b/profiles/input/server.c
---- a/profiles/input/server.c	2026-09-14 12:48:43.808127271 -0400
-+++ b/profiles/input/server.c	2026-09-14 12:48:43.810748402 -0400
+--- a/profiles/input/server.c	2026-09-14 14:00:40.230083636 -0400
++++ b/profiles/input/server.c	2026-09-14 14:00:40.233018964 -0400
 @@ -31,6 +31,7 @@
  #include "src/profile.h"
  
@@ -978,8 +978,8 @@ diff -ruN a/profiles/input/server.c b/profiles/input/server.c
  		goto drop;
  	}
 diff -ruN a/profiles/input/sixaxis.h b/profiles/input/sixaxis.h
---- a/profiles/input/sixaxis.h	2026-09-14 12:48:43.815350152 -0400
-+++ b/profiles/input/sixaxis.h	2026-09-14 12:48:43.817736617 -0400
+--- a/profiles/input/sixaxis.h	2026-09-14 14:00:40.237931842 -0400
++++ b/profiles/input/sixaxis.h	2026-09-14 14:00:40.240158182 -0400
 @@ -13,10 +13,18 @@
  #ifndef _SIXAXIS_H_
  #define _SIXAXIS_H_
@@ -1000,9 +1000,9 @@ diff -ruN a/profiles/input/sixaxis.h b/profiles/input/sixaxis.h
  
  struct cable_pairing {
 diff -ruN a/src/adapter.c b/src/adapter.c
---- a/src/adapter.c	2026-09-14 12:48:43.822269639 -0400
-+++ b/src/adapter.c	2026-09-14 12:48:43.824725800 -0400
-@@ -5889,6 +5889,29 @@
+--- a/src/adapter.c	2026-09-14 14:00:40.244150635 -0400
++++ b/src/adapter.c	2026-09-14 14:00:40.246182290 -0400
+@@ -5889,6 +5889,31 @@
  
  	DBG("adapter %s has been enabled", adapter->path);
  
@@ -1011,11 +1011,13 @@ diff -ruN a/src/adapter.c b/src/adapter.c
 +	 * re-adds a device at the temporary→non-temporary bonding transition
 +	 * (device.c:6880). Re-add bonded BR/EDR devices on every power-on so
 +	 * the `disconnected_accept_list_entries` page-scan path stays
-+	 * populated. This is NOT the reconnect-wedge fix (see
-+	 * docs/hardware/intel-9260-reconnect-wedge.md); it only keeps the
-+	 * accept list consistent with the bonded device set. Harmless if the
-+	 * entry is already present (the kernel rejects the duplicate; the
-+	 * error log is cosmetic).
++	 * populated.
++	 *
++	 * It is not the reconnect fix: measured traces showed page scan was
++	 * already on and zero Connect Requests reached HCI during a failure, so
++	 * this only keeps the accept list consistent with the bonded device
++	 * set. Harmless if the entry is already present (the kernel rejects the
++	 * duplicate; the error log is cosmetic).
 +	 */
 +	if (btd_has_kernel_features(KERNEL_CONN_CONTROL)) {
 +		GSList *l;
@@ -1032,7 +1034,7 @@ diff -ruN a/src/adapter.c b/src/adapter.c
  	trigger_passive_scanning(adapter);
  }
  
-@@ -8035,6 +8058,21 @@
+@@ -8035,6 +8060,21 @@
  	return 0;
  }
  
@@ -1054,7 +1056,7 @@ diff -ruN a/src/adapter.c b/src/adapter.c
  int btd_adapter_read_clock(struct btd_adapter *adapter, const bdaddr_t *bdaddr,
  				int which, int timeout, uint32_t *clock,
  				uint16_t *accuracy)
-@@ -8747,6 +8785,84 @@
+@@ -8747,6 +8787,84 @@
  	g_key_file_free(key_file);
  }
  
@@ -1140,8 +1142,8 @@ diff -ruN a/src/adapter.c b/src/adapter.c
  					const void *param, void *user_data)
  {
 diff -ruN a/src/adapter.h b/src/adapter.h
---- a/src/adapter.h	2026-09-14 12:48:43.829613378 -0400
-+++ b/src/adapter.h	2026-09-14 12:48:43.831957665 -0400
+--- a/src/adapter.h	2026-09-14 14:00:40.249773428 -0400
++++ b/src/adapter.h	2026-09-14 14:00:40.251536990 -0400
 @@ -78,6 +78,9 @@
  const char *btd_adapter_get_name(struct btd_adapter *adapter);
  void btd_adapter_remove_device(struct btd_adapter *adapter,

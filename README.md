@@ -7,6 +7,11 @@ it does on a Switch, then unplug and use it as a normal Bluetooth controller.
 Every change here exists because a test showed the stock stack needs it; the
 [why each piece is needed](#why-each-piece-is-needed) section below is the record.
 
+Confirmed end to end on **two retail Pro Controllers**: cable pairing, cable
+pairing while already paired, re-pairing after another host took the pairing
+slot, and plugging in a controller that is **already connected** without
+dropping its link.
+
 ---
 
 ## The problem
@@ -128,8 +133,7 @@ for the wired side, and the kernel patch for the passivity. The shape is:
 | `src/bluez/…` | full **patched** BlueZ files (vs pristine 5.86) |
 | `src/patches/` | generated patches — what you actually apply |
 | `src/MANIFEST.md` | pinned nixpkgs rev, versions, store paths, sha256s |
-| `docs/hardware/` | secondary: an unrelated Intel-radio quirk + research notes |
-| `tools/` | fetch pristine sources, regenerate patches, build helpers |
+| `tools/` | fetch pristine upstream sources, regenerate the patches |
 
 **Rule:** `src/` holds the reviewed full files and is the source of truth;
 `src/patches/` is generated from it (`tools/make-patches.zsh`). One direction
@@ -197,7 +201,7 @@ No unit below survives without evidence; that is the project's core rule.
 | Unit | Why it exists |
 |---|---|
 | `procon.h` (new) | USB IDs, report/subcommand constants, the 3-step API, HID SDP record |
-| `procon.c` (new) | session init + framing + device-info + read-then-decide + 3-step |
+| `procon.c` (new) | connection-status query (`0x80 01`, opens no session) + session init + framing + device-info + read-then-decide + 3-step |
 | `plugins/sixaxis.c` | dispatch by USB id; on completion store the link key, mark Paired+Bonded, trust, and set the cable-pairing flag |
 | `profiles/input/server.c` | gate inbound connections for a not-yet-bonded cable-pairing device; defer the SDP browse |
 | `profiles/input/sixaxis.h` | `CABLE_PAIRING_PROCON` device kind |
@@ -217,6 +221,7 @@ are recorded here so they are not re-added:
 | Connectable / discoverable keep-alive patch | **not needed** — BlueZ page-scans after a disconnect on its own; the only connectable call kept is the first-wake re-assert at dock |
 | `adapter_start` accept-list re-add | **demoted to hardening** — it keeps the `disconnected_accept_list_entries` page-scan path populated, but measured traces show it is *not* the reconnect fix (during a failure, page scan was on and zero Connect Requests reached HCI) |
 | Host-name alias `Nintendo*` | **kept out** — no primary-source support, and it is a workaround for a different symptom (rumble-induced disconnects) |
+| Starting the wired session on every plug-in | **removed** — `0x80 02` makes the controller commit to USB and terminate a live Bluetooth link, so docking a connected controller dropped it; an `0x80 01` status query plus a connected-check now precedes any session |
 | `bluetooth.disable_ertm=1` + `UserspaceHID=true` | **not a fix** — addresses a different failure (connect-then-terminate) |
 
 ---
@@ -254,7 +259,7 @@ Every unit above earned its place from a measurement. The method:
 - Wake is controller-initiated: the host reconnects only if it is page-scanning
   when the controller presses. Host-initiated paging never works.
 
-Acceptance for the full product:
+Acceptance for the transport (kernel side):
 
 1. ≥10 consecutive sleep → normal-button wake → input cycles with no manual
    recovery.
@@ -263,6 +268,20 @@ Acceptance for the full product:
 3. While docked, a button press connects over BT.
 4. ≥10 min soak with no `timeout waiting` in the kernel log; a clean link shows
    report deltas of ≈ 7–17 ms.
+
+Acceptance for cable pairing (BlueZ side), on two retail Pro Controllers:
+
+1. **Fresh controller.** Plug in → Paired + Bonded + trusted; unplug → a button
+   press reconnects over Bluetooth.
+2. **Re-pair after another host took the slot.** A controller paired to a Switch
+   has a stored record that is no longer ours, so the 3-step runs and re-pairs it.
+3. **Dock an already-paired controller.** read-then-decide reuses the stored
+   record; no re-pair, no writes beyond the arm.
+4. **Dock a controller that is already connected over Bluetooth.** The link
+   stays up: the `0x80 01` query identifies the controller and the session never
+   runs. This is the case that used to drop the link.
+5. **Two controllers in use at once.** Both pair, both stay connected, and
+   neither shows discernible input lag while the other is in use.
 
 ---
 
@@ -280,15 +299,6 @@ Acceptance for the full product:
   primary-source support (community folklore only); it is a workaround for a
   *different* symptom (rumble-induced disconnects on some hosts), not part of
   this project's scope.
-
-### A note on an unrelated hardware quirk
-
-The author's Intel Wireless-AC 9260 occasionally stops delivering pages from an
-already-paired controller until the host scan register is re-armed. It is a radio
-firmware issue, **not** caused by these patches and not fixable by them. It is
-documented separately in
-[`docs/hardware/intel-9260-reconnect-wedge.md`](docs/hardware/intel-9260-reconnect-wedge.md)
-so it does not distract from the feature above.
 
 ---
 

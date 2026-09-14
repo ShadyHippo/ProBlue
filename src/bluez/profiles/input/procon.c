@@ -7,8 +7,8 @@
  *  Nintendo Switch Pro Controller wired pairing protocol.
  *
  *  Every command here runs over the hidraw node that hid-nintendo creates when
- *  the controller is plugged in. The driver is passive on USB (see the ProBlue
- *  hid-nintendo patch), which makes bluetoothd the only writer on that node.
+ *  the controller is plugged in. The driver is passive on USB (it sends nothing
+ *  on that transport), which makes bluetoothd the only writer on that node.
  *
  *  These calls are synchronous and run from the udev plugin context: they block
  *  for the duration of one command round-trip. The controller normally answers
@@ -315,7 +315,7 @@ static int procon_read_pairing_info(int fd, uint8_t stored[0x1a])
 }
 
 /* Flash copy of the LTK is little-endian (x200A); as a BR/EDR link key it
- * must be byte-reversed (KEY_CONTEXT §3.6). */
+ * must be byte-reversed. */
 static void procon_flash_ltk_to_bredr(const uint8_t flash[16],
 					uint8_t ltk[16])
 {
@@ -325,7 +325,7 @@ static void procon_flash_ltk_to_bredr(const uint8_t flash[16],
 		ltk[i] = flash[15 - i];
 }
 
-/* Read-then-decide (PLAN P8 replacement): acquire the BR/EDR link key from a
+/* Read-then-decide: acquire the BR/EDR link key from a
  * wired Pro Controller. If the active x2000 section has magic 0x95 and the
  * stored host MAC == @host, the controller is already paired to us — skip
  * the 3-step and read the key straight from flash. Otherwise run the full

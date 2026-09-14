@@ -24,7 +24,7 @@
  *  SPI flash notes: "it keeps the active section and the current LTK used
  *  with Switch can be acquired") — no fresh-key generation. So an already
  *  paired controller does not need the 3-step at all: read x2000 (0x10) and
- *  skip if magic 0x95 + stored MAC == ours (read-then-decide, PLAN P8).
+ *  skip if magic 0x95 + stored MAC == ours (read-then-decide).
  *
  *  The shared cable-pairing infrastructure (CablePairingType, struct
  *  cable_pairing, the PlayStation device table) lives in sixaxis.h; everything
@@ -89,7 +89,7 @@
 
 /* subcmd 0x08 00 clears the shipment low-power state (SPI x5000). On this
  * unit x5000 already reads 0xFF (shipment-normal); the wired arm at dock is
- * therefore a no-op kept for console-order parity (ledger R4). */
+ * therefore a no-op kept for console-order parity. */
 #define PROCON_SHIPMENT_CLEAR	0x00
 
 /* x2000 pairing-info section layout (SPI flash notes, stride 0x26). */
@@ -110,11 +110,11 @@ int procon_acquire_ltk(int fd, const bdaddr_t *host, uint8_t ltk[16]);
 const struct cable_pairing *get_nintendo_pairing(uint16_t vid, uint16_t pid,
 							const char *name);
 
-/* The controller's HID service record, captured verbatim from bluetoothd's
- * SDP cache during a genuine pairing of a retail Pro Controller. It is a
- * property of the controller's firmware and identical across units (no
- * machine- or key-specific data). P7: verify with a real SDP browse on 5.86
- * before relying on it. */
+/* The controller's HID service record, mirroring SIXAXIS_HID_SDP_RECORD on the
+ * Sony path: captured verbatim from bluetoothd's SDP cache during a genuine
+ * pairing of a retail Pro Controller. It is a property of the controller's
+ * firmware and identical across units (no machine- or key-specific data), so
+ * the device can be marked Paired+Bonded without a live SDP browse. */
 #define PROCON_HID_SDP_RECORD "36017D0900000A000100000900013503191124090004"\
 	"350D350619010009001135031900110900053503191002090006350909656E09006A09"\
 	"01000900093508350619112409010109000D350F350D35061901000900133503190011"\
