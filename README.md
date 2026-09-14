@@ -300,3 +300,11 @@ The patches under `src/patches/` carry this copyright and SPDX identifier in
 their header; the new BlueZ files (`profiles/input/procon.{c,h}`) carry them as
 SPDX file headers. The kernel file is upstream `hid-nintendo.c` and keeps its
 upstream header.
+
+---
+
+## Acknowledgements
+
+This project was built with **DeepSeek V4 / V4.1 Flash** (DeepSeek) and
+**GLM 5.3 Flash** (Z.ai) — models that are remarkably cheap for what they do —
+made usable day to day through **OpenCode Go**. It doesn't happen without them.
